@@ -11,13 +11,18 @@ Claude Code に覚えさせておきたい、**自分で書いたスキル**を�
 ```
 ~/workspace/skills/skills/<名前>/SKILL.md   ← ここ（git で追う）
         ↓ symlink
-~/.claude/skills/<名前>/                     ← 全プロジェクトで効く
+~/.claude/skills/<名前>/                     ← Claude Code
+~/.agents/skills/<名前>/                     ← Codex・Cursor・Gemini CLI
 ~/.claude/skills/wrangler/ など              ← 入れただけのスキル。実ディレクトリのまま、git で追わない
 ```
 
 `~/.claude/skills` は Cloudflare 一式など**入れたスキルと同居している**。
 だからディレクトリごと symlink にはせず、**スキル1つずつ張る**。
 `install.sh` は同じ名前の実ディレクトリがあれば黙って避ける（上書きしない）。
+
+`SKILL.md` は [Agent Skills](https://agentskills.io) の共通形式なので、中身はそのままで
+他のエージェントでも動く。違うのは読む場所だけ。`~/.agents/skills` が Codex・Cursor・
+Gemini CLI の共通の置き場で、Claude Code だけが `~/.claude/skills` を見る。
 
 ## 入れる
 
