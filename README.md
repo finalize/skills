@@ -41,6 +41,7 @@ Claude Code はセッション開始時にスキル一覧を読む。反映さ�
 | `shogo-vp-npm-release` | Vite+ のモノレポで npm パッケージを作る・出すとき |
 | `shogo-workers-ship` | Cloudflare Workers に載せるツールのデプロイまわりを触るとき |
 | `effective-tests` | テストを書く・足す・直すとき。実装の写しを避け、仕様と性質で固定する書き方と、差し替えの型と、罠。LLM 生成テストの研究と古典の出典つき |
+| `spec-decisions` | 作る前に仕様を書くとき。決めごとだけを書き、1つに1つの例、決められない点は「要確認」で人に返す。`effective-tests` の前に来る |
 
 ## 足すとき
 
