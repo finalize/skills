@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "HTML で組んだ動きを 1 コマずつ撮る（capture.mjs）。Playwright はブラウザを落とさず、入っている Chrome を使う",
+  "dependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}
