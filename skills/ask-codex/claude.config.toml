@@ -1,0 +1,28 @@
+# Claude Code から `codex exec -p claude` で呼ぶとき専用のプロファイル。
+# 対話用の ~/.codex/config.toml は変更しない(これを上に重ねるだけ)。
+# 実体はこのスキルの中にあり、~/.codex/claude.config.toml から symlink している。
+# 切っているプラグインは openai-bundled の名前なので、環境が違えば合わせる。
+# model は書かない。~/.codex/config.toml のものに従う。
+model_reasoning_effort = "xhigh"
+sandbox_mode = "read-only"
+approval_policy = "never"
+notify = []
+
+# 非対話の呼び出しでは不要。起動を遅くする。
+[mcp_servers.node_repl]
+enabled = false
+
+[plugins."browser@openai-bundled"]
+enabled = false
+
+[plugins."computer-use@openai-bundled"]
+enabled = false
+
+[plugins."unified-computer-use@openai-bundled"]
+enabled = false
+
+[plugins."visualize@openai-bundled"]
+enabled = false
+
+[plugins."codex-app-tools@openai-bundled"]
+enabled = false
