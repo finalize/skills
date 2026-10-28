@@ -5,6 +5,7 @@
 #   -w  workspace-write で実行する。省略時は read-only
 #   -C  作業ディレクトリ。既定は現在地
 #   -k  セッションを残す (あとで `codex exec resume` で続けるとき)
+#   -S  最終回答の形を JSON Schema で縛る (schemas/ に反論用がある)
 #   プロンプトを省略するか - を渡すと、標準入力から読む
 set -eu
 
@@ -12,8 +13,10 @@ effort=""
 sandbox=""
 dir="."
 keep=""
-while getopts "e:wC:k" opt; do
+schema=""
+while getopts "e:wC:kS:" opt; do
   case $opt in
+    S) schema=$OPTARG ;;
     e) effort=$OPTARG ;;
     w) sandbox="workspace-write" ;;
     C) dir=$OPTARG ;;
@@ -39,6 +42,7 @@ set -- exec -p claude -C "$dir" -o "$out"
 if [ -n "$effort" ]; then set -- "$@" -c "model_reasoning_effort=\"$effort\""; fi
 if [ -n "$sandbox" ]; then set -- "$@" -s "$sandbox"; else set -- "$@" --skip-git-repo-check; fi
 if [ -z "$keep" ]; then set -- "$@" --ephemeral; fi
+if [ -n "$schema" ]; then set -- "$@" --output-schema "$schema"; fi
 
 # プロンプトを引数で渡すとき、標準入力が開いたままだと codex は EOF を待って止まる。
 if [ "$prompt" = "-" ]; then

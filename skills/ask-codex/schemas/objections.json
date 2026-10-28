@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["no_major_issues", "objections"],
+  "properties": {
+    "no_major_issues": {
+      "type": "boolean",
+      "description": "重大な問題が見つからなければ true にして、objections を空にする"
+    },
+    "objections": {
+      "type": "array",
+      "description": "強い順に最大5件",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "evidence", "how_to_verify", "severity", "alternative", "expands_scope"],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "何が問題か。一文"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "根拠。ファイル:行か、具体的な失敗シナリオ。書けないなら、この反論は出さない"
+          },
+          "how_to_verify": {
+            "type": "string",
+            "description": "計画を立てた側が実行できる確かめ方。読むファイル、grep、再現手順"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "alternative": {
+            "type": "string",
+            "description": "代わりの案。なければ空文字"
+          },
+          "expands_scope": {
+            "type": "boolean",
+            "description": "Codex の見立て。範囲内かどうかの判断は受け取る側がするので、参考にとどまる"
+          }
+        }
+      }
+    }
+  }
+}
