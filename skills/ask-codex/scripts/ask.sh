@@ -1,7 +1,7 @@
 #!/bin/sh
 # Claude Code から Codex に1回聞いて、最終回答だけを標準出力に返す。
 # 使い方: ask.sh [-e 努力度] [-w] [-C ディレクトリ] [-k] [プロンプト]
-#   -e  model_reasoning_effort を上書き (low|medium|high|xhigh)。既定はプロファイルの xhigh
+#   -e  model_reasoning_effort を上書き (low|medium|high|xhigh|max)。既定はプロファイルの max
 #   -w  workspace-write で実行する。省略時は read-only
 #   -C  作業ディレクトリ。既定は現在地
 #   -k  セッションを残す (あとで `codex exec resume` で続けるとき)

@@ -3,7 +3,7 @@
 # 実体はこのスキルの中にあり、~/.codex/claude.config.toml から symlink している。
 # 切っているプラグインは openai-bundled の名前なので、環境が違えば合わせる。
 # model は書かない。~/.codex/config.toml のものに従う。
-model_reasoning_effort = "xhigh"
+model_reasoning_effort = "max"
 sandbox_mode = "read-only"
 approval_policy = "never"
 notify = []

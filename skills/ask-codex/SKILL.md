@@ -13,14 +13,14 @@ description: Claude Code が Codex に別視点を頼むとき。実装後の差
 - 向かない: 前提が曖昧な探索。細かい往復が要る試行錯誤。こちらの会話文脈に強く依存する作業。
 
 ## 呼び方
-`scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は xhigh、read-only、
+`scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は max、read-only、
 不要な MCP とプラグインを切る)を重ね、最終回答だけを返す。プロファイルは `~/.codex/claude.config.toml` から
 このディレクトリのファイルへ symlink しておく。無ければ `ask.sh` が張り方を出して止まる。
 
 ```bash
 # 差分レビュー(読み取り専用)
 ~/.claude/skills/ask-codex/scripts/ask.sh -C <repo> "<プロンプト>"
-# 既定は xhigh で遅い。run_in_background で走らせ、その間に自分の作業を進める
+# 既定は max で遅い。run_in_background で走らせ、その間に自分の作業を進める
 # 軽い確認は推論を下げる
 ~/.claude/skills/ask-codex/scripts/ask.sh -e low -C <repo> "<プロンプト>"
 # 長いプロンプトは標準入力から
@@ -52,6 +52,6 @@ Codex はこの会話を知らない。次を書く。
 ## 守ること
 - 秘密(認証情報、`.env` の中身)をプロンプトに入れない。
 - 書き込みを許す `-w` は、Claude Code が同じファイルを触っていないときだけ。同時編集は `git worktree` で分ける。
-- 推論の目安: レビュー、設計、難しいバグは既定の xhigh のまま。事実確認や一行の質問だけ `-e low`。
+- 推論の目安: レビュー、設計、難しいバグは既定の max のまま。小さな差分は `-e xhigh`、事実確認や一行の質問だけ `-e low`。`ultra` は自動で作業を分担し使用量が読めないので使わない。
 - モデルは固定しない。`~/.codex/config.toml` の `model` に従う。変えるなら `codex exec -m` を直接使う。
 - 失敗したら、ラッパーが出すログのパスを読んで原因を見る。同じ呼び出しを繰り返さない。
