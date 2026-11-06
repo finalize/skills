@@ -1,0 +1,71 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["answer", "findings", "coverage", "assumptions", "open_questions", "draft"],
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "問いへの答えの要約。3行まで。根拠は findings に書く"
+    },
+    "findings": {
+      "type": "array",
+      "description": "主張。大事な順",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "evidence", "basis", "confidence"],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "一文"
+          },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "根拠の場所。`ファイル:行`、打ったコマンド、文書の URL。引用は1行まで。場所を書けないなら basis を inferred にする"
+          },
+          "basis": {
+            "type": "string",
+            "enum": ["ran", "read", "inferred"],
+            "description": "ran: コマンドを動かして見た。read: ソースや文書で読んだ。inferred: 読んだものからの推測"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["searched", "not_checked"],
+      "properties": {
+        "searched": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "見たファイルとディレクトリ、検索の条件 (rg のパターンなど)"
+        },
+        "not_checked": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "頼まれた範囲のうち、見ていないものと見られなかったもの (読めなかったファイルを含む)。それぞれ理由を付ける"
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "質問できなかったので置いた仮定"
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "人が決めること。Codex は決めずに、ここに挙げる"
+    },
+    "draft": {
+      "type": "string",
+      "description": "下書きを頼まれたときの本文 (Markdown)。頼まれていなければ空文字"
+    }
+  }
+}

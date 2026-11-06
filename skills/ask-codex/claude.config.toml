@@ -1,12 +1,16 @@
 # Claude Code から `codex exec -p claude` で呼ぶとき専用のプロファイル。
 # 対話用の ~/.codex/config.toml は変更しない(これを上に重ねるだけ)。
 # 実体はこのスキルの中にあり、~/.codex/claude.config.toml から symlink している。
-# 切っているプラグインは openai-bundled の名前なので、環境が違えば合わせる。
+# 切っているプラグインは openai-bundled / openai-primary-runtime の名前なので、環境が違えば合わせる。
 # model は書かない。~/.codex/config.toml のものに従う。
 model_reasoning_effort = "max"
-sandbox_mode = "read-only"
 approval_policy = "never"
 notify = []
+
+# 読み書きの範囲は permissions で決める(下の claude-read と claude-write)。
+# sandbox_mode をどこかの設定に書くか、--sandbox(-s)を渡すと、Codex は古い設定に切り替わり、
+# ここに書いた読めなくする決まりが効かなくなる。sandbox_mode は書かない(ask.sh は、見つけたら止まる)。
+default_permissions = "claude-read"
 
 # 非対話の呼び出しでは不要。起動を遅くする。
 [mcp_servers.node_repl]
@@ -26,3 +30,75 @@ enabled = false
 
 [plugins."codex-app-tools@openai-bundled"]
 enabled = false
+
+# 文書を読み書きするプラグイン。シェルのコマンドとは別の経路でファイルを開けるかもしれないので切る
+[plugins."documents@openai-primary-runtime"]
+enabled = false
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = false
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = false
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = false
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = false
+
+# 読むだけ。読める範囲は read-only と同じ(ディスク全体)で、秘密と実データの置き場だけを読めなくする。
+# Claude Code の .claude/settings.json の除外は Codex には効かないので、同じものをここで止める。
+# 止めているのは、Codex が動かすコマンドだけ。Codex の Web 検索は OpenAI の側で動く。
+# 止めているのは決まった名前と場所だけなので、ほかの名前で置いた秘密は読める。
+[permissions.claude-read]
+description = "Claude Code から頼む読むだけの仕事。秘密と実データの置き場は読めない"
+extends = ":read-only"
+
+# 場所で止める。ask.sh は、-C がこの中を指していたら止まる(作業のディレクトリにすると、読めるようになるため)
+[permissions.claude-read.filesystem]
+"~/.ssh" = "deny"
+"~/.aws" = "deny"
+"~/.config/gcloud" = "deny"
+"~/.config/gh" = "deny"
+"~/.docker/config.json" = "deny"
+"~/.netrc" = "deny"
+"~/.git-credentials" = "deny"
+"~/.npmrc" = "deny"
+# お客様のデータと、その分析の出力(synCLO の PoC。リポジトリの外にある)
+"~/github.com/nexgenjapan/data" = "deny"
+
+# 名前で止める。ディスクのどこにあっても(作業のディレクトリの外でも)止まる
+[permissions.claude-read.filesystem."/"]
+"**/.env" = "deny"
+"**/.env.local" = "deny"
+"**/.env.*.local" = "deny"
+"**/.env.development" = "deny"
+"**/.env.production" = "deny"
+"**/.env.test" = "deny"
+"**/.env.deploy" = "deny"
+"**/*.pem" = "deny"
+"**/*.key" = "deny"
+"**/*.p12" = "deny"
+"**/*.pfx" = "deny"
+"**/*credentials*.json" = "deny"
+"**/*service-account*.json" = "deny"
+"**/*serviceaccount*.json" = "deny"
+"**/*-sa-key*.json" = "deny"
+"**/*-key.json" = "deny"
+# お客様から受け取った資料(synCLO の docs に置いてある)
+"**/docs/**/*.docx" = "deny"
+"**/docs/**/*.xlsx" = "deny"
+"**/docs/**/*.pdf" = "deny"
+"**/docs/**/*.pptx" = "deny"
+
+# ask.sh -w のとき。claude-read の決まりのまま、作業ディレクトリと、自分用の一時ディレクトリ($TMPDIR)にだけ書ける
+[permissions.claude-write]
+description = "Claude Code から頼む書く仕事。作業ディレクトリと $TMPDIR にだけ書ける"
+extends = "claude-read"
+
+[permissions.claude-write.filesystem]
+":tmpdir" = "write"
+
+[permissions.claude-write.filesystem.":workspace_roots"]
+"." = "write"
