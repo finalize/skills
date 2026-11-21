@@ -1,0 +1,1 @@
+このスキルは Claude Code から呼ぶ前提。install.sh は ~/.agents/skills（Codex・Cursor・Gemini CLI の置き場）には張らない。
