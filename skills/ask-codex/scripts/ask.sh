@@ -80,7 +80,8 @@ done
 # 2) sandbox_mode がどこかの設定にあると、Codex は permissions を使わず古い設定に切り替わる
 # 3) ほかの設定 (リポジトリの .codex/config.toml など) が、このプロファイルの permissions を書き換えられる
 # 4) MCP とプラグインは、読めなくする決まりの外で動く。Codex から見えるものは全部切る
-# 設定は TOML として読まず、行で探す。書き方の揺れ (引用符、ドットのキー) は拾い、迷う書き方は止める側に倒す
+# 設定は TOML として読まず、行で探す。書き方の揺れ (引用符、ドットのキー) は拾い、迷う書き方は止める側に倒す。
+# 文字のエスケープで書いた鍵は拾えないので、エスケープがあれば止まる
 # 呼ぶのはたいてい Claude。止まった理由を消すために、Claude が自分で設定を書き換えないように言い添える
 handoff="(Claude へ: 設定やプロファイルを自分で書き換えない。この理由を利用者に伝えて、判断を待つ)"
 stop() {
@@ -109,17 +110,43 @@ done <<LIST
 $denied_dirs
 LIST
 
-# 2)〜4)。コメントの行は除いて探す
-found() { # $1 のパターンが、設定 $2 のコメントでない行にあれば 0、無ければ 1
-  body=$(sed '/^[[:space:]]*#/d' "$2") || stop "$2 を読めない"
+# 2)〜4)。検査する行 (下の body_of が出す行) を、文字で探す
+# 設定 $1 の、検査する行を出す。# で始まる行は、コメントとして落とす。ただし、複数行の文字列の区切り (""" か ''') が
+# ファイルのどこかにあれば、落とさない。複数行の文字列の中の # で始まる行はコメントではなく、インラインの表の中なら、
+# 文字列を閉じた後ろに鍵を続けて書ける。信頼したリポジトリの設定がこの形で claude-read を隠し、deny を read に書き換えると、
+# 止めたはずのファイルが読めた (2026-11-21、codex-cli 0.164.0)。
+# 区切りが本当に文字列を開いているかは行では見分けきれないので、コメントや値の中にあるだけでも落とさない。
+# そのときは、本当のコメントに書いた名前でも止まる。区切りがあるかを確かめられなければ、失敗を返す (呼ぶ側が止まる)
+body_of() {
+  ml=0
+  grep -q -e '"""' -e "'''" "$1" || ml=$?
+  case $ml in
+    0) cat "$1" ;;
+    1) sed '/^[[:space:]]*#/d' "$1" ;;
+    *) return "$ml" ;;
+  esac
+}
+found() { # $1 のパターンが、設定 $2 の検査する行にあれば 0、無ければ 1
+  body=$(body_of "$2") || stop "$2 を読めない"
   rc=0
   printf '%s\n' "$body" | grep -Eq "$1" || rc=$?
   [ "$rc" -le 1 ] || stop "$2 を確かめられない (grep の終了コード $rc)"
   return "$rc"
 }
 sandbox_mode_re="sandbox_mode[\"']?[[:space:]]*="
+# TOML の鍵は、文字をエスケープしても書ける (バックスラッシュに u・U・x と16進の数字)。ここの検査は文字で探すので、
+# そう書いた claude-read や sandbox_mode を拾えない。信頼したリポジトリの設定がこの書き方で deny を read に
+# 書き換えると、止めたはずのファイルが読めた (2026-11-21、codex-cli 0.164.0)。
+# 鍵か値かは行では見分けきれない (インラインの表) ので、検査する行のどこかにあれば止まる。値や行末のコメントにあっても止まる
+escape_re='\\[uUx][0-9A-Fa-f]'
+no_escapes() { # 設定 $1 に、文字をエスケープした書き方があれば止まる
+  if found "$escape_re" "$1"; then
+    stop "$1 に、文字をエスケープした書き方 (バックスラッシュに u・U・x と16進の数字) がある。設定の鍵をこう書かれると、文字で探す検査をすり抜けるので、確かめられない"
+  fi
+}
 
 # プロファイル自身
+no_escapes "$profile"
 if found "$sandbox_mode_re" "$profile"; then
   stop "$profile に sandbox_mode がある。あると、プロファイルの読めなくする決まりが効かない"
 fi
@@ -127,6 +154,7 @@ fi
 # 土台の設定 (~/.codex/config.toml)。claude-read / claude-write に触れていたら、deny を足すだけでも止まる。
 # そこに足した場所は 1) で見ていないので、-C がその中を指しても気づけない。プラグインと MCP は下で見る
 if [ -f "$base" ]; then
+  no_escapes "$base"
   if found "$sandbox_mode_re" "$base"; then
     stop "$base に sandbox_mode がある。あると、プロファイルの読めなくする決まりが効かない"
   fi
@@ -138,7 +166,7 @@ fi
 # リポジトリの設定と /etc/codex の設定。Codex は、信頼したプロジェクトなら、根から作業ディレクトリまでの
 # 全部の .codex/config.toml を読む。だから -C から根まで、間のディレクトリも全部見る
 mcp_names_from() { # 設定 $1 が定義する MCP の名前を1行ずつ。読み取れない書き方があれば止まる
-  body=$(sed '/^[[:space:]]*#/d' "$1") || stop "$1 を読めない"
+  body=$(body_of "$1") || stop "$1 を読めない"
   lines=$(printf '%s\n' "$body" | grep -E '(^|[^A-Za-z0-9_])mcp_servers([^A-Za-z0-9_]|$)' || true)
   [ -n "$lines" ] || return 0
   bad=$(printf '%s\n' "$lines" | grep -Ev '^[[:space:]]*(\[+[[:space:]]*)?mcp_servers\.[A-Za-z0-9_-]+([].[:space:]=]|$)' || true)
@@ -148,6 +176,7 @@ mcp_names_from() { # 設定 $1 が定義する MCP の名前を1行ずつ。読�
 proj_mcp=""
 check_other() {
   [ -f "$1" ] || return 0
+  no_escapes "$1"
   if found "$sandbox_mode_re" "$1"; then
     stop "$1 に sandbox_mode がある。あると、プロファイルの読めなくする決まりが効かない"
   fi
