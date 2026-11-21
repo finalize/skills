@@ -241,15 +241,17 @@ if [ -f "$base" ]; then
 fi
 
 # 4) MCP。Codex から見える MCP を全部切る。プロファイルに名前で書くと、その MCP が無い環境では
-#    「invalid transport」で落ちるので、呼び出しのたびに一覧を取って、あるものだけ切る
-if ! mcp_json=$(cd "$abs_dir" && codex mcp list --json 2>/dev/null </dev/null); then
-  stop "codex mcp list --json が失敗した (切る MCP の一覧を取れない)。codex mcp list を手で流して原因を見る"
+#    「invalid transport」で落ちるので、呼び出しのたびに一覧を取って、あるものだけ切る。
+#    一覧は、exec と同じプロファイルを付けて取る。付けないと、プロファイルが切ったプラグインの MCP も一覧に出て、
+#    exec から見えないその MCP を切ろうとして、同じ「invalid transport」で落ちる (2026-11-21、cua_repl)
+if ! mcp_json=$(cd "$abs_dir" && codex -p claude mcp list --json 2>/dev/null </dev/null); then
+  stop "codex -p claude mcp list --json が失敗した (切る MCP の一覧を取れない)。codex -p claude mcp list を手で流して原因を見る"
 fi
 if ! mcp_all=$(printf '%s' "$mcp_json" | jq -r 'if type == "array" then .[].name else error("not an array") end' 2>/dev/null); then
-  stop "codex mcp list --json の出力を読み取れない (切る MCP の一覧を取れない)"
+  stop "codex -p claude mcp list --json の出力を読み取れない (切る MCP の一覧を取れない)"
 fi
 mcp_names=$(printf '%s' "$mcp_json" | jq -r '.[] | select(.enabled != false) | .name' 2>/dev/null) ||
-  stop "codex mcp list --json の出力を読み取れない (切る MCP の一覧を取れない)"
+  stop "codex -p claude mcp list --json の出力を読み取れない (切る MCP の一覧を取れない)"
 for name in $mcp_names; do
   case $name in
     *[!A-Za-z0-9_-]*) stop "MCP の名前 $name を、コマンドラインから切れない (英数字と _ - 以外を含む)" ;;
@@ -259,7 +261,7 @@ done
 # 一覧に出ないなら、いまは読まれていない。ただ、走っている間に信頼されて有効になるかを確かめられないので止まる
 for name in $proj_mcp; do
   printf '%s\n' "$mcp_all" | grep -Fxq -- "$name" ||
-    stop "リポジトリの設定が MCP ($name) を定義しているが、codex mcp list に出ない。プロジェクトが信頼されていないと一覧に出ず、切れない (利用者が Codex でプロジェクトを信頼するか、定義を外すと通る)"
+    stop "リポジトリの設定が MCP ($name) を定義しているが、codex -p claude mcp list に出ない。プロジェクトが信頼されていないと一覧に出ず、切れない (利用者が Codex でプロジェクトを信頼するか、定義を外すと通る)"
 done
 
 out=$(mktemp -t codex-ask.XXXXXX)

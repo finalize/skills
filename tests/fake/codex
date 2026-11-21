@@ -1,12 +1,37 @@
 #!/bin/sh
 # 偽の codex。モデルは呼ばない。引数と標準入力の様子を FAKE_LOG に残し、環境変数に従って振る舞う。
-#   mcp list --json : FAKE_MCP_JSON の中身を返す（既定は []）。FAKE_MCP_RC で終了コード
+#   [-p <名前>] mcp list --json : MCP の一覧を返す。FAKE_MCP_RC で終了コード
+#       -p を付けたとき   FAKE_MCP_JSON（プロファイルを重ねた見え方。既定は []）
+#       -p が無いとき     FAKE_MCP_BASE_JSON（土台の設定だけの見え方。無ければ FAKE_MCP_JSON と同じ）
 #   exec ...        : FAKE_MODE = ok（回答を書く）| empty（終了コード 0 で回答を書かない）| fail（終了コード 3）
+#       FAKE_MCP_JSON に無い MCP を -c mcp_servers.<名前>.enabled=false で切ろうとすると、設定を読めずに終了コード 1
+# 一覧の見え方が2つあるのと、無い MCP を切ると落ちるのは、本物で見た振る舞い（2026-11-21、codex-cli 0.164.0）:
+#   codex mcp list --json は、プロファイルが切ったプラグインの MCP（cua_repl）も返す。codex -p claude mcp list --json は返さない。
+#   codex exec -p claude -c mcp_servers.cua_repl.enabled=false は「invalid transport in `mcp_servers.cua_repl`」で落ちる。
 log=${FAKE_LOG:-/dev/null}
 
-if [ "${1:-}" = "mcp" ] && [ "${2:-}" = "list" ]; then
+# サブコマンドの前の -p <名前> を読み飛ばして、サブコマンドを見る
+profile="" sub="" sub2="" prev=""
+for a in "$@"; do
+  if [ "$prev" = "-p" ]; then
+    profile=$a prev=""
+  elif [ -z "$sub" ] && [ "$a" = "-p" ]; then
+    prev=$a
+  elif [ -z "$sub" ]; then
+    sub=$a
+  else
+    sub2=$a
+    break
+  fi
+done
+
+if [ "$sub" = "mcp" ] && [ "$sub2" = "list" ]; then
   echo "--- mcp list (cwd=$(pwd -P))" >>"$log"
-  printf '%s\n' "${FAKE_MCP_JSON:-[]}"
+  if [ -n "$profile" ]; then
+    printf '%s\n' "${FAKE_MCP_JSON:-[]}"
+  else
+    printf '%s\n' "${FAKE_MCP_BASE_JSON:-${FAKE_MCP_JSON:-[]}}"
+  fi
   exit "${FAKE_MCP_RC:-0}"
 fi
 
@@ -19,6 +44,24 @@ fi
   done
   if [ -t 0 ]; then echo "stdin=tty"; else printf 'stdin_bytes=%s\n' "$(cat | wc -c | tr -d ' ')"; fi
 } >>"$log"
+
+# 見るのは -c の値だけ（プロンプトに同じ形の文字列があっても、設定の上書きではない）
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-c" ]; then
+    case $a in
+      mcp_servers.*.enabled=false)
+        name=${a#mcp_servers.}
+        name=${name%.enabled=false}
+        if ! printf '%s' "${FAKE_MCP_JSON:-[]}" | jq -e --arg n "$name" 'any(.[]; .name == $n)' >/dev/null 2>&1; then
+          printf 'Error loading config.toml: invalid transport\nin `mcp_servers.%s`\n' "$name" >&2
+          exit 1
+        fi
+        ;;
+    esac
+  fi
+  prev=$a
+done
 
 out="" prev=""
 for a in "$@"; do

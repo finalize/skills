@@ -20,14 +20,15 @@ cp "$PROFILE_SRC" "$ch/claude.config.toml"
 git init -q "$fx/repo"
 mkdir -p "$fx/repo/a/b/c"
 
-# run <現在地> <ask.sh の引数...> : 結果は RC・OUT・ERR。FAKE_MODE・FAKE_MCP_JSON・FAKE_MCP_RC は呼ぶ前に置く
+# run <現在地> <ask.sh の引数...> : 結果は RC・OUT・ERR。
+#   FAKE_MODE・FAKE_MCP_JSON・FAKE_MCP_BASE_JSON・FAKE_MCP_RC は呼ぶ前に置く
 run() {
   local cwd=$1
   shift
   : >"$fx/fake.log"
   OUT=$(cd "$cwd" && env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" XDG_STATE_HOME="$fx/state" \
     FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" FAKE_MODE="${FAKE_MODE:-ok}" \
-    FAKE_MCP_JSON="${FAKE_MCP_JSON:-[]}" FAKE_MCP_RC="${FAKE_MCP_RC:-0}" \
+    FAKE_MCP_JSON="${FAKE_MCP_JSON:-[]}" FAKE_MCP_BASE_JSON="${FAKE_MCP_BASE_JSON:-}" FAKE_MCP_RC="${FAKE_MCP_RC:-0}" \
     /bin/sh "$ASK" "$@" 2>"$fx/err" </dev/null)
   RC=$?
   ERR=$(cat "$fx/err")
@@ -215,6 +216,16 @@ FAKE_MCP_RC=1 run "$fx/plain" "x"
 stopped "MCP の一覧が取れない"
 FAKE_MCP_JSON='{"servers":[]}' run "$fx/plain" "x"
 stopped "MCP の一覧の形が違う"
+
+# 実際に壊れた入力（2026-11-21、codex-cli 0.164.0）。土台で有効なプラグインが MCP（cua_repl）を持ち込み、
+# プロファイルがそのプラグインを切っている。土台の見え方の一覧から切る名前を取ると、exec から見えない cua_repl まで
+# 切ろうとして、本物の codex exec が「invalid transport in `mcp_servers.cua_repl`」で落ちた。
+FAKE_MCP_BASE_JSON='[{"name":"cua_repl","enabled":true},{"name":"node_repl","enabled":true}]' \
+  FAKE_MCP_JSON='[{"name":"node_repl","enabled":true}]' run "$fx/plain" "x"
+passed "プロファイルが切ったプラグインの MCP が、土台の一覧にだけ出る"
+check "プロファイルが切ったプラグインの MCP が、土台の一覧にだけ出る: 回答を返す" "FAKE ANSWER" "$OUT"
+has "exec から見える MCP は切る" "-c mcp_servers.node_repl.enabled=false" "$(argv)"
+lacks "exec から見えない MCP には触らない" "mcp_servers.cua_repl" "$(argv)"
 
 put "$fx/repo/a/b" '[mcp_servers.projsrv]
 command = "true"'
