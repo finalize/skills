@@ -256,13 +256,13 @@ LLM・エージェントが書くテストについて:
 - Google Testing Blog, Change-Detector Tests Considered Harmful (2015) — https://testing.googleblog.com/2015/01/testing-on-toilet-change-detector-tests.html
 - Mathews & Nagappan, Design choices made by LLM-based test generators prevent them from finding bugs (2024, preprint) — https://arxiv.org/abs/2412.14137
 - Zhao, Zhou & Cohen, Evaluating and Mitigating the Misguidance Effect of Buggy Code in LLM-Generated Unit Tests (ISSTA 2026) — https://arxiv.org/abs/2607.22883
-- Li, Yu & Yuan, Escaping the Self-Repair Trap (2026, preprint) — https://arxiv.org/abs/2608.05917
+- Li, Yu & Yuan, Escaping the Self-Repair Trap (ASE 2026) — https://arxiv.org/abs/2608.05917
 - Wang, Xu, Briand & Liu, MUTGEN (IEEE TSE) — https://arxiv.org/abs/2506.02954
 - Foster et al., Mutation-Guided LLM-based Test Generation at Meta (FSE 2025) — https://arxiv.org/abs/2501.12862
 - SWE Atlas (2026, preprint; 弱い assertion が変異を通す) — https://arxiv.org/abs/2605.08366
 - Anthropic, Claude 3.7 Sonnet / Claude 4 / Claude Sonnet 4.5 system cards（テストの書き換え、特別扱い、モックの検証） — https://www.anthropic.com/claude-4-system-card
 - OpenAI, Monitoring Reasoning Models for Misbehavior (2025) — https://arxiv.org/abs/2503.11926
-- METR, Recent Frontier Models Are Reward Hacking (2025) — https://metr.substack.com/p/2025-06-05-recent-reward-hacking
+- METR, Recent Frontier Models Are Reward Hacking (2025) — https://metr.org/blog/2025-06-05-recent-reward-hacking/
 
 古典:
 
