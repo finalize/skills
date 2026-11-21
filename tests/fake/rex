@@ -1,0 +1,32 @@
+#!/bin/bash
+# 偽の rex。本物の Rex には何も送らない。
+#   capture : FAKE_STATE/screen.<何回目> があればそれ、無ければ FAKE_STATE/screen の中身を返す。中身が GONE なら失敗する
+#   new     : 引数を FAKE_STATE/rexnew.log に残し、-- の後ろのコマンドを実行して（出力は FAKE_STATE/child.out）、JSON を返す
+case ${1:-} in
+  capture)
+    n=$(($(cat "$FAKE_STATE/count" 2>/dev/null || echo 0) + 1))
+    echo "$n" >"$FAKE_STATE/count"
+    f="$FAKE_STATE/screen.$n"
+    [ -e "$f" ] || f="$FAKE_STATE/screen"
+    if [ "$(cat "$f")" = "GONE" ]; then
+      echo "Error: block not found" >&2
+      exit 1
+    fi
+    cat "$f"
+    ;;
+  new)
+    shift
+    {
+      echo "--- rex new"
+      for a in "$@"; do printf 'arg=%s\n' "$a"; done
+    } >>"$FAKE_STATE/rexnew.log"
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done
+    shift
+    "$@" >>"$FAKE_STATE/child.out" 2>&1
+    printf '{"session_id":"session:fake","initial_windows":[{"block_ids":["block:fake"]}]}\n'
+    ;;
+  *)
+    echo "fake rex: 知らないコマンド: ${1:-}" >&2
+    exit 2
+    ;;
+esac

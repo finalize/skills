@@ -1,0 +1,43 @@
+#!/bin/sh
+# 偽の codex。モデルは呼ばない。引数と標準入力の様子を FAKE_LOG に残し、環境変数に従って振る舞う。
+#   mcp list --json : FAKE_MCP_JSON の中身を返す（既定は []）。FAKE_MCP_RC で終了コード
+#   exec ...        : FAKE_MODE = ok（回答を書く）| empty（終了コード 0 で回答を書かない）| fail（終了コード 3）
+log=${FAKE_LOG:-/dev/null}
+
+if [ "${1:-}" = "mcp" ] && [ "${2:-}" = "list" ]; then
+  echo "--- mcp list (cwd=$(pwd -P))" >>"$log"
+  printf '%s\n' "${FAKE_MCP_JSON:-[]}"
+  exit "${FAKE_MCP_RC:-0}"
+fi
+
+{
+  echo "--- call"
+  i=0
+  for a in "$@"; do
+    i=$((i + 1))
+    printf 'argv[%d]=%s\n' "$i" "$a"
+  done
+  if [ -t 0 ]; then echo "stdin=tty"; else printf 'stdin_bytes=%s\n' "$(cat | wc -c | tr -d ' ')"; fi
+} >>"$log"
+
+out="" prev=""
+for a in "$@"; do
+  [ "$prev" = "-o" ] && out=$a
+  prev=$a
+done
+case ${FAKE_MODE:-ok} in
+  ok)
+    printf '{"type":"thread.started","thread_id":"th_fake_123"}\n'
+    printf '{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":90,"reasoning_output_tokens":40}}\n'
+    printf 'FAKE ANSWER' >"$out"
+    ;;
+  empty)
+    printf '{"type":"thread.started","thread_id":"th_fake_123"}\n'
+    printf '{"type":"turn.failed","error":{"message":"stream disconnected"}}\n'
+    ;;
+  fail)
+    echo "fake codex: boom" >&2
+    printf '{"type":"error","message":"fake error event"}\n'
+    exit 3
+    ;;
+esac

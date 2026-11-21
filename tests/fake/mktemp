@@ -1,0 +1,7 @@
+#!/bin/sh
+# macOS の `mktemp -t` は TMPDIR を見ず、本物の一時ディレクトリに作る。
+# テストでは FAKE_TMP の下に作らせて、本物の一時ディレクトリを汚さない。
+if [ "${1:-}" = "-t" ] && [ -n "${FAKE_TMP:-}" ]; then
+  exec /usr/bin/mktemp "$FAKE_TMP/$2"
+fi
+exec /usr/bin/mktemp "$@"

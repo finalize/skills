@@ -1,0 +1,8 @@
+#!/bin/bash
+# 偽の claude。受け取った引数をそのまま出す（launch.sh が、指示文を1つの引数で渡せているかを見るため）。
+echo "argc=$#"
+i=0
+for a in "$@"; do
+  i=$((i + 1))
+  printf 'argv[%d]=<<%s>>\n' "$i" "$a"
+done

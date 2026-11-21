@@ -1,0 +1,18 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    # スクリプトは macOS の bash 3.2 と BSD の道具で動かすものなので、macOS で流す
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck と jq（無ければ入れる）
+        run: |
+          command -v shellcheck >/dev/null || brew install shellcheck
+          command -v jq >/dev/null || brew install jq
+      - name: テストと lint
+        run: tests/run.sh
