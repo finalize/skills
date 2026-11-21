@@ -55,17 +55,11 @@ Claude Code はセッション開始時にスキル一覧を読む。反映さ�
 
 ### ask-codex を使う前に
 
-- 案件ごとの読ませない場所（受け取ったデータの置き場など）を、公開しない `~/.codex/config.toml` に足す。
-  足せるのは deny の行だけ。書き方は `skills/ask-codex/SKILL.md` の「守ること」。
-
-  ```toml
-  [permissions.claude-read.filesystem]
-  "~/path/to/received-data" = "deny"
-  ```
-
 - `ask.sh` が「有効なプラグインを、プロファイルが切っていない」と言って止まったら、出てきた行を
   `skills/ask-codex/claude.config.toml` に足す（Codex で有効にしているプラグインは、環境ごとに違う）。
-- 足したら `tests/sandbox.sh` を流して、止まるのを見る。
+- 読めなくする名前や場所を足すときも、同じプロファイルに書く（公開されるので、案件の名前や受け取ったデータの場所は書かない）。
+  `~/.codex/config.toml` には書かない（そこが `claude-read` / `claude-write` に触れていると、`ask.sh` は止まる）。
+- プロファイルに足したら `tests/sandbox.sh` を流して、読めなくする決まりが効いたままなのを見る。
 
 ### 更新するとき
 
@@ -79,9 +73,11 @@ git -C ~/workspace/skills pull --ff-only
 `install.sh` も流し直す。増えたスキルを張り、消えたスキルと、Claude Code 専用になったスキルの `~/.agents/skills` の symlink を外す。
 
 `~/.codex/claude.config.toml` が symlink でなく実ファイル（手で置いた写し）だと、`install.sh` は上書きせずに知らせる。
-そのときは、次の順でやる。逆にすると、その間は、写しにだけ書いてあった場所が読める。
+そのときは、次の順でやる。
 
-1. 写しにだけ書いてある決まり（案件ごとの場所など）を、`~/.codex/config.toml` に移す
+1. 写しにだけ書いてある決まりを見る。要るものは、リポジトリのプロファイル（`skills/ask-codex/claude.config.toml`）に足す。
+   このファイルは公開されるので、案件の名前や受け取ったデータの場所は書かない（そういう決まりは引き継げない）。
+   足さなかった決まりは、写しを消した時点で効かなくなる
 2. 写しを消して、`install.sh` を流し直す
 3. `ask.sh -e low` を1回流して、通るのを見る
 

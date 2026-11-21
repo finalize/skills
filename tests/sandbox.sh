@@ -18,8 +18,8 @@ fi
 # /tmp の下に作る。$TMPDIR の下は claude-write で書ける場所（:tmpdir）なので、「外には書けない」の確かめに使えない
 tmp=$(new_tmp /tmp)
 trap 'rm -rf "$tmp"' EXIT
-ch="$tmp/codexhome" home="$tmp/home" ws="$tmp/ws" out="$tmp/outside" vault="$tmp/vault"
-mkdir -p "$ch" "$home" "$ws" "$out" "$vault"
+ch="$tmp/codexhome" home="$tmp/home" ws="$tmp/ws" out="$tmp/outside"
+mkdir -p "$ch" "$home" "$ws" "$out"
 cp "$repo/skills/ask-codex/claude.config.toml" "$ch/claude.config.toml"
 git init -q "$ws"
 
@@ -77,19 +77,6 @@ for n in .zshrc .gitconfig .claude/skills/x/SKILL.md notes.txt; do
   mk "$home/$n"
   allowed claude-read "$home/$n"
 done
-
-# --- 公開しない側（土台の config.toml）に足した deny が、プロファイルの決まりに合成されること
-mk "$vault/data.txt"
-allowed claude-read "$vault/data.txt"
-{
-  echo '[permissions.claude-read.filesystem]'
-  echo "\"$vault\" = \"deny\""
-} >"$ch/config.toml"
-denied claude-read "$vault/data.txt"
-denied claude-write "$vault/data.txt"
-denied claude-read "$ws/a.pem"
-allowed claude-read "$ws/README.txt"
-rm "$ch/config.toml"
 
 # --- 書く権限（-w）
 w() { # w <権限> <ファイル> : 追記できれば 0

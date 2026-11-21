@@ -47,6 +47,7 @@ Codex 側では未解決の issue（openai/codex #20919）で、`</dev/null` が
   プロファイルに名前で書き、土台で有効なのに切っていないものがあれば `ask.sh` が止まる形にした
 - 案件ごとの場所は、公開しない `~/.codex/config.toml` の `[permissions.claude-read.filesystem]` に deny の行だけを足す。
   土台の設定に足した deny が、プロファイルの決まりに合成される（`claude-write` にも引き継がれる）のを見た
+  （この仕組みは、あとで外した。下の 2026-11-21 の記録）
 - `-w` で `.claude/settings.json` に書けた。読むだけにした（`.git` と `.codex` は、Codex が初めから書けなくしている）
 - プロンプトの後ろの `-C`・`-w` を黙って捨てていた。回答が空でも成功にしていた。どちらも止まる形にした
 
@@ -59,6 +60,14 @@ Codex 側では未解決の issue（openai/codex #20919）で、`</dev/null` が
 一覧を `-p claude` を付けて取る形に直し、同じ呼び出しで回答が返るのを見た（読むだけ。`-e low` と `-e xhigh`）。
 偽の codex は、どちらの呼び方にも同じ一覧を返し、無い MCP を切っても落ちなかったので、テストでは見つからなかった。
 偽物を本物の振る舞いに合わせ、この入力を `tests/test_ask.sh` に足した（121項目）。
+
+2026-11-21: 案件ごとの場所の仕組み（公開しない `~/.codex/config.toml` に deny の行を足す）を外した。スキルを特定の案件に寄せないため。
+外す前に、この書き方の不具合も見た。土台の設定に `[permissions.claude-read.filesystem]` だけを足すと、`-p claude` を付けない
+`codex`（`codex mcp list`、`codex login status`、`codex features list`）が
+`config defines [permissions] profiles but does not set default_permissions` で設定を読めなくなる（codex-cli 0.164.0）。
+`tests/sandbox.sh` は `-p claude` を付けた呼び方だけを見ていたので、気づけなかった。
+いまは、土台の設定が `claude-read` / `claude-write` に触れていれば、deny を足すだけでも `ask.sh` は止まる（リポジトリの設定と同じ）。
+読めなくする場所は、プロファイルにだけ書く。`tests/sandbox.sh` は129項目、`tests/test_ask.sh` は119項目になった。
 
 ## まだ確かめていないこと
 

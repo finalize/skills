@@ -90,15 +90,10 @@ stop() {
 }
 lower() { printf '%s/' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
 
-# 1) 場所 (~/ か / で始まり、* を含まない) の deny。プロファイルと、公開しない土台の設定 (案件ごとの場所) の両方から読む
+# 1) プロファイルの、場所 (~/ か / で始まり、* を含まない) の deny。場所を書くのはプロファイルだけ (ほかの設定が足していたら、下で止まる)
 deny_re="s/^[[:space:]]*[\"']((~\\/|\\/)[^\"'*]*)[\"'][[:space:]]*=[[:space:]]*[\"']deny[\"'].*/\\1/p"
 denied_dirs=$(sed -nE "$deny_re" "$profile") || stop "$profile を読めない"
 [ -n "$denied_dirs" ] || stop "$profile から、場所で読めなくしたディレクトリを読み取れない"
-if [ -f "$base" ]; then
-  more_dirs=$(sed -nE "$deny_re" "$base") || stop "$base を読めない"
-  denied_dirs="$denied_dirs
-$more_dirs"
-fi
 abs_lower=$(lower "$abs_dir")
 while IFS= read -r d; do
   [ -n "$d" ] || continue
@@ -129,30 +124,14 @@ if found "$sandbox_mode_re" "$profile"; then
   stop "$profile に sandbox_mode がある。あると、プロファイルの読めなくする決まりが効かない"
 fi
 
-# 土台の設定 (~/.codex/config.toml)。claude-read の filesystem の表に deny の行を足すのは通す
-# (公開しない、案件ごとの場所の置き場)。それ以外の形で claude-read / claude-write に触れていたら止まる
+# 土台の設定 (~/.codex/config.toml)。claude-read / claude-write に触れていたら、deny を足すだけでも止まる。
+# そこに足した場所は 1) で見ていないので、-C がその中を指しても気づけない。プラグインと MCP は下で見る
 if [ -f "$base" ]; then
   if found "$sandbox_mode_re" "$base"; then
     stop "$base に sandbox_mode がある。あると、プロファイルの読めなくする決まりが効かない"
   fi
-  touched=$(awk '
-    /^[ \t]*#/ || /^[ \t]*$/ { next }
-    /^[ \t]*\[/ {
-      intab = 0
-      if ($0 ~ /claude-(read|write)/) {
-        if ($0 ~ /^[ \t]*\[[ \t]*permissions\.claude-read\.filesystem(\.|\])/) intab = 1
-        else { print; exit }
-      }
-      next
-    }
-    intab {
-      if ($0 !~ /=[ \t]*["\047]deny["\047][ \t]*(#.*)?$/) { print; exit }
-      next
-    }
-    /claude-(read|write)/ { print; exit }
-  ' "$base") || stop "$base を確かめられない"
-  if [ -n "$touched" ]; then
-    stop "$base が、プロファイルの permissions に deny を足す以外の形で触れている: $touched"
+  if found 'claude-(read|write)' "$base"; then
+    stop "$base が、プロファイルの permissions (claude-read / claude-write) に触れている"
   fi
 fi
 
