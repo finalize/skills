@@ -53,9 +53,16 @@ Codex 側では未解決の issue（openai/codex #20919）で、`</dev/null` が
 本物の `codex exec` で確かめたのは、新しい `ask.sh` が組むのと同じ引数（`-c mcp_servers.<名前>.enabled=false` を含む）で
 1回呼んで、回答が返ることまで（2026-11-21、古いプロファイルのまま）。
 
+2026-11-21（プラグインが MCP を持ち込んでいる Mac）: 新しいプロファイルと新しい `ask.sh` を合わせて、本物の `codex exec` で通した。
+`ask.sh -e low` が `invalid transport in mcp_servers.cua_repl` で落ちた。`codex mcp list --json` は土台の設定だけの見え方で、
+プロファイルが切ったプラグインの MCP（`cua_repl`）も返す。`codex -p claude mcp list --json` が返したのは `node_repl` だけだった。
+一覧を `-p claude` を付けて取る形に直し、同じ呼び出しで回答が返るのを見た（読むだけ。`-e low` と `-e xhigh`）。
+偽の codex は、どちらの呼び方にも同じ一覧を返し、無い MCP を切っても落ちなかったので、テストでは見つからなかった。
+偽物を本物の振る舞いに合わせ、この入力を `tests/test_ask.sh` に足した（121項目）。
+
 ## まだ確かめていないこと
 
-- 新しいプロファイルと新しい `ask.sh` を合わせた、本物の `codex exec` での通し
+- 書く権限（`-w`）での、新しいプロファイルと新しい `ask.sh` を合わせた、本物の `codex exec` での通し（読むだけは上のとおり通した）
 - MCP とプラグインが、exec の中で実際に使えなくなっていること（見たのは `codex mcp list` の表示まで）
 - `sandbox_mode` があると決まりが効かなくなる件。Codex の文書にはそう書いてある。0.164.0 のソースの読みでは
   「`-c default_permissions` を渡していれば、そちらが先に選ばれる」で、食い違っている。`ask.sh` は止める側に倒している

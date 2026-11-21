@@ -70,7 +70,7 @@ Claude が読む量の多い仕事を Codex に寄せるときは、先に `refe
   - 次のときは決まりが効かなくなるか、効いているかを確かめられないので、`ask.sh` は呼ばずに止まる。
     止まったら、理由を利用者に伝えて判断を待つ。守りを通すために、プロファイルや Codex の設定を自分で書き換えない
     - どこかの設定に `sandbox_mode` がある。見るのは `~/.codex/config.toml`、`/etc/codex`、`-C` からリポジトリの根までの全部の `.codex/config.toml`
-    - リポジトリの設定が `claude-read` / `claude-write` かプラグインに触れている。または、リポジトリの設定の MCP が `codex mcp list` に出ない
+    - リポジトリの設定が `claude-read` / `claude-write` かプラグインに触れている。または、リポジトリの設定の MCP が `codex -p claude mcp list` に出ない
     - `-C` が、場所で止めたディレクトリの中にある
     - `~/.codex/config.toml` で有効なプラグインを、プロファイルが切っていない(足す行が出る。足すのは利用者)
   - MCP とプラグインは、読めなくする決まりの外で動く。だから全部切っている。MCP が要る仕事は、`ask.sh` では頼まない
