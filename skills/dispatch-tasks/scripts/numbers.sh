@@ -3,6 +3,7 @@
 # 使い方: numbers.sh -r <リポジトリ> <フォルダ>...   例: numbers.sh -r . specs/frontend specs/backend docs/adr
 #   origin を fetch した後の全部のブランチの履歴と、全部の worktree のコミット前のものを見る
 #   出るのは目安。司令塔の外のセッションも同じ番号を取りにいくので、作る直前にもう一度流す
+#   <フォルダ> はリポジトリの根からの道で書く。-r はリポジトリの中ならどこでもよい（根に寄せる）
 set -euo pipefail
 
 repo="."
@@ -14,9 +15,13 @@ while getopts "r:" opt; do
 done
 shift $((OPTIND - 1))
 if [ $# -eq 0 ]; then
-  sed -n '3,5p' "$0" >&2
+  sed -n '3,6p' "$0" >&2
   exit 2
 fi
+
+# 根に寄せる。下のディレクトリのまま git log に道を渡すと、現在地からの相対と読まれて履歴の分が丸ごと抜け、
+# 使用済みの番号を「次」と返す（終了コードは 0 のまま）
+repo=$(git -C "$repo" rev-parse --show-toplevel)
 
 git -C "$repo" fetch -q --prune origin
 
