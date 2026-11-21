@@ -15,7 +15,7 @@ home="$fx/home"
 ch="$home/.codex"
 # ask.sh は jq を使う。偽の codex を先頭に置き、あとは最小限の PATH にする
 tools="$here/fake:/usr/bin:/bin:$(dirname "$(command -v jq)")"
-mkdir -p "$ch" "$home/.ssh/sub" "$fx/state" "$fx/tmp" "$fx/plain" "$fx/elsewhere" "$fx/vault/sub"
+mkdir -p "$ch" "$home/.ssh/sub" "$fx/state" "$fx/tmp" "$fx/plain" "$fx/elsewhere"
 cp "$PROFILE_SRC" "$ch/claude.config.toml"
 git init -q "$fx/repo"
 mkdir -p "$fx/repo/a/b/c"
@@ -138,33 +138,35 @@ stopped "止めた場所の中（symlink 経由）"
 run "$fx" -C "$home" "x"
 passed "止めた場所の親"
 
-# --- 公開しない側（~/.codex/config.toml）に足した、案件ごとの場所
+# --- 土台の設定（~/.codex/config.toml）がプロファイルの permissions に触れる
+# ここが設計の判断: 読めなくする場所は、プロファイルにだけ書く。土台の設定は、deny を足すだけでも止める（リポジトリの設定と同じ）。
+# 前は、案件ごとの場所を土台の設定に足す形を通していた。外した理由は2つ（2026-11-21）。
+#   スキルを特定の案件に寄せない。
+#   土台の設定に [permissions] だけを書くと、-p claude を付けない codex が設定を読めなくなる（codex-cli 0.164.0）。
 put "$home" "[permissions.claude-read.filesystem]
 \"$fx/vault\" = \"deny\""
-run "$fx" -C "$fx/vault/sub" "x"
-stopped "公開しない側で止めた場所の中"
-has "公開しない側で止めた場所の中: 理由を言う" "読めなくした" "$ERR"
 run "$fx/plain" "x"
-passed "公開しない側が deny だけを足す"
+stopped "土台の設定が場所の deny を足す"
+has "土台の設定が場所の deny を足す: 理由を言う" "(claude-read / claude-write) に触れている" "$ERR"
 put "$home" "[permissions.claude-read.filesystem.\"/\"]
 \"**/*.secret\" = \"deny\" # 名前の決まり"
 run "$fx/plain" "x"
-passed "公開しない側が名前の deny を足す"
+stopped "土台の設定が名前の deny を足す"
 put "$home" "[permissions.claude-read.filesystem]
 \"$home/.ssh\" = \"read\""
 run "$fx/plain" "x"
-stopped "公開しない側が deny 以外を書く"
+stopped "土台の設定が deny 以外を書く"
 put "$home" "[permissions.claude-write.filesystem]
 \"$fx/vault\" = \"deny\""
 run "$fx/plain" "x"
-stopped "公開しない側が claude-write の表に書く"
+stopped "土台の設定が claude-write の表に書く"
 put "$home" "[permissions.claude-read]
 extends = \":read-only\""
 run "$fx/plain" "x"
-stopped "公開しない側が claude-read そのものを書き換える"
+stopped "土台の設定が claude-read そのものを書き換える"
 put "$home" 'default_permissions = "claude-read"'
 run "$fx/plain" "x"
-stopped "公開しない側が default_permissions に書く"
+stopped "土台の設定が default_permissions に書く"
 clear_cfg
 
 # --- 守り2: sandbox_mode

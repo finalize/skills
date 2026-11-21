@@ -59,9 +59,9 @@ description = "Claude Code から頼む読むだけの仕事。秘密と実デ�
 extends = ":read-only"
 
 # 場所で止める。ask.sh は、-C がこの中を指していたら止まる(作業のディレクトリにすると、読めるようになるため)。
-# 案件ごとの場所(受け取ったデータの置き場など)は、ここには書かない。このファイルは公開される。
-# 公開しない ~/.codex/config.toml の [permissions.claude-read.filesystem] に、deny の行だけを足す。
-# そこに deny 以外が書いてあると、ask.sh は止まる。足したら SKILL.md の「守ること」の確かめ方で、止まるのを見る。
+# 場所を書くのは、このファイルだけ。ほかの設定(~/.codex/config.toml、リポジトリの .codex/config.toml)が
+# claude-read / claude-write に触れていると、deny を足すだけでも ask.sh は止まる。
+# 足したら SKILL.md の「守ること」の確かめ方で、止まるのを見る。
 # シェルの起動ファイル(~/.zshrc など)は止めていない。止めると、Codex が動かすシェルの PATH が壊れる。
 [permissions.claude-read.filesystem]
 "~/.ssh" = "deny"
