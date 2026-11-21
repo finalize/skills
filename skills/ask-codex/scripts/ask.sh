@@ -11,6 +11,8 @@
 # ${XDG_STATE_HOME:-~/.local/state}/ask-codex/usage.tsv に1行足す (失敗したときも)。
 # 記録に失敗しても、回答と終了コードは変えない。
 set -eu
+# パス名の展開は使わない。設定から読んだ名前 (プラグイン、MCP) を空白で区切って回すので、名前の中の * や ? を展開させない
+set -f
 umask 077
 
 usage() { sed -n '3,9p' "$0" >&2; }
@@ -84,9 +86,9 @@ done
 # 文字のエスケープで書いた鍵は拾えないので、エスケープがあれば止まる
 # 呼ぶのはたいてい Claude。止まった理由を消すために、Claude が自分で設定を書き換えないように言い添える
 handoff="(Claude へ: 設定やプロファイルを自分で書き換えない。この理由を利用者に伝えて、判断を待つ)"
-stop() {
-  echo "止めた: $1" >&2
-  echo "$handoff" >&2
+stop() { # 理由には設定の行を入れることがある。macOS の sh の echo はバックスラッシュを解釈するので、printf で出す
+  printf '%s\n' "止めた: $1" >&2
+  printf '%s\n' "$handoff" >&2
   exit 1
 }
 lower() { printf '%s/' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
@@ -204,8 +206,15 @@ check_other /etc/codex/managed_config.toml
 
 # 4) プラグイン。土台の設定で有効なもののうち、プロファイルが切っていないものがあれば止まる
 #    (コマンドラインから切れるのを確かめられなかったので、プロファイルに足してもらう)
-plugins_in() { # 設定 $1 の [plugins."名前"] のうち、$2 が off なら enabled = false のもの、on ならそれ以外を1行ずつ
-  awk -v want="$2" '
+# 設定 $1 を、下の2つが行の先頭から照らせる形にして出す。先頭の BOM と、行末の CR (改行が CRLF のとき) を落とす。
+# 落とさないと、その行の表を見落とす。本物の codex は、先頭に BOM がある設定を読む (2026-11-21、codex-cli 0.164.0)
+plugin_lines() {
+  bom=$(printf '\357\273\277')
+  text=$(LC_ALL=C sed "1s/^$bom//" "$1") || return 1
+  printf '%s\n' "$text" | tr -d '\r'
+}
+plugins_in() { # 標準入力の設定の [plugins."名前"] のうち、$1 が off なら enabled = false のもの、on ならそれ以外を1行ずつ
+  awk -v want="$1" '
     function flush() {
       if (name != "" && ((want == "off" && off) || (want == "on" && !off))) print name
       name = ""; off = 0
@@ -214,7 +223,7 @@ plugins_in() { # 設定 $1 の [plugins."名前"] のうち、$2 が off なら 
       q = "[\"\047]"
       pre = "^[ \t]*\\[[ \t]*plugins\\."
       # [plugins."名前"] そのものだけを数える。[plugins."名前".何か] のような下の表は数えない
-      exact = pre "(" q "[^\"\047]+" q "|[A-Za-z0-9_@-]+)[ \t]*\\][ \t]*(#.*)?$"
+      exact = pre "(" q "[^]\"\047 \t\\\\]+" q "|[A-Za-z0-9_@-]+)[ \t]*\\][ \t]*(#.*)?$"
     }
     /^[ \t]*#/ { next }
     /^[ \t]*\[/ {
@@ -228,14 +237,57 @@ plugins_in() { # 設定 $1 の [plugins."名前"] のうち、$2 が off なら 
     }
     name != "" && /^[ \t]*enabled[ \t]*=[ \t]*false/ { off = 1 }
     END { flush() }
-  ' "$1"
+  '
+}
+# 標準入力の設定のプラグインの書き方のうち、上の数え方で数えられないものの行を、1つ出す。無ければ何も出さない。
+# 数えられない書き方を黙って通すと、土台の設定でそう書いた有効なプラグインが、切られないまま動く (2026-11-21)
+#   鍵の先頭に plugins が出てくる行が、[plugins."名前"] か、その下の [plugins."名前".何か] でない
+#     ("plugins" と引用符で囲む、ドットの前後の空白、[plugins] の表の中に名前を鍵で書く、plugins."名前".enabled = true)
+#   名前の中に ] か空白かバックスラッシュがある (] は名前を切り詰めて読む。空白は、名前を照らすときに2つに分かれる。
+#     どちらも別のプラグインと取り違える。バックスラッシュは、足す行を二重引用符で案内すると別の名前になる)
+#   下の表だけがあって、[plugins."名前"] の表が無い (enabled の行を見る所が無い。有効かもしれない)
+# 複数行の文字列の中の行は、表の行と見分けていない。その中に [plugins."名前"] や enabled = false に見える行を
+# わざと書けば、取り違える。土台の設定は利用者自身のファイルなので、そこまでは追わない
+odd_plugins() {
+  awk '
+    BEGIN {
+      q = "[\"\047]"
+      pre = "^[ \t]*\\[[ \t]*plugins\\."
+      name = "(" q "[^]\"\047 \t\\\\]+" q "|[A-Za-z0-9_@-]+)"
+      start = "^[ \t]*(\\[+[ \t]*)?" q "?plugins" q "?[ \t]*([.=\\]]|$)"
+      ok = pre name "[ \t]*(\\]|\\.)"
+    }
+    /^[ \t]*#/ { next }
+    $0 ~ start && $0 !~ ok { print; bad = 1; exit }
+    /^[ \t]*\[/ {
+      inplug = ($0 ~ ok)
+      if (inplug) {
+        s = $0
+        sub(pre, "", s)
+        match(s, "^" name)
+        n = substr(s, 1, RLENGTH)
+        rest = substr(s, RLENGTH + 1)
+        gsub(q, "", n)
+        if (rest ~ "^[ \t]*\\]") whole[n] = 1
+        else if (!(n in below)) below[n] = $0
+      }
+      next
+    }
+    END {
+      if (bad) exit
+      for (n in below) if (!(n in whole)) { print below[n]; exit }
+    }
+  '
 }
 if [ -f "$base" ]; then
-  if found '^[[:space:]]*plugins[.[:space:]=]' "$base"; then
-    stop "$base のプラグインの書き方を読み取れない ([plugins.\"名前\"] の表で書く)"
+  base_plug=$(plugin_lines "$base") || stop "$base を読めない"
+  prof_plug=$(plugin_lines "$profile") || stop "$profile を読めない"
+  odd=$(printf '%s\n' "$base_plug" | odd_plugins) || stop "$base を確かめられない"
+  if [ -n "$odd" ]; then
+    stop "$base のプラグインの書き方を読み取れない ([plugins.\"名前\"] の表で書く): $odd"
   fi
-  on_plugins=$(plugins_in "$base" on) || stop "$base を確かめられない"
-  off_plugins=$(plugins_in "$profile" off) || stop "$profile を確かめられない"
+  on_plugins=$(printf '%s\n' "$base_plug" | plugins_in on) || stop "$base を確かめられない"
+  off_plugins=$(printf '%s\n' "$prof_plug" | plugins_in off) || stop "$profile を確かめられない"
   missing=""
   for name in $on_plugins; do
     printf '%s\n' "$off_plugins" | grep -Fxq -- "$name" || missing="$missing $name"

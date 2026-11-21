@@ -379,6 +379,90 @@ passed "土台で有効でも、プロファイルが切っていれば通る"
 put "$home" 'plugins."x@y".enabled = true'
 run "$fx/plain" "x"
 stopped "土台のプラグインの書き方を読み取れない"
+# 理由に出す設定の行は、書いてあるとおりに出す（macOS の sh の echo は、バックスラッシュと t をタブに変える）
+put "$home" 'plugins = "a\tb"'
+run "$fx/plain" "x"
+has "読み取れない行を、書いてあるとおりに出す" 'plugins = "a\tb"' "$ERR"
+clear_cfg
+
+# 実際に見つかった抜け（2026-11-21）。数えるのは [plugins."名前"] の表だけなのに、ほかの書き方を黙って通していた。
+# 土台の設定でそう書いた有効なプラグインは、数えられず、プロファイルが切っていなくても止まらなかった。
+# ここが設計の判断: 鍵の先頭に plugins が出てくる行が、数えられる形でなければ止める。ほかの書き方を数えようとはしない。
+odd_plugins() { # odd_plugins <説明> <土台の設定の中身>
+  put "$home" "$2"
+  run "$fx/plain" "x"
+  stopped "読み取れないプラグインの書き方: $1"
+  has "読み取れないプラグインの書き方: $1: 理由を言う" "プラグインの書き方を読み取れない" "$ERR"
+  clear_cfg
+}
+odd_plugins "plugins を引用符で囲む" '["plugins"."newone@somewhere"]
+enabled = true'
+odd_plugins "plugins を一重引用符で囲む" "['plugins'.\"newone@somewhere\"]
+enabled = true"
+odd_plugins "ドットの前に空白" '[plugins . "newone@somewhere"]
+enabled = true'
+odd_plugins "ドットの後ろに空白" '[plugins. "newone@somewhere"]
+enabled = true'
+odd_plugins "plugins の表の中に、名前を鍵で書く" '[plugins]
+"newone@somewhere" = { enabled = true }'
+# 名前の中の ] で名前を切り詰めて読むと、プロファイルが切っている別のプラグインに見える
+odd_plugins "名前の中に ]" '[plugins."browser@openai-bundled]x"]
+enabled = true'
+# 名前の中の空白で、名前を照らすときに2つに分かれると、プロファイルが切っている別の2つのプラグインに見える
+odd_plugins "名前の中に空白" '[plugins."browser@openai-bundled computer-use@openai-bundled"]
+enabled = true'
+# 名前を二重引用符で囲んで案内するので、バックスラッシュのある名前は、案内どおりに足しても別の名前になる
+odd_plugins "名前の中にバックスラッシュ" "[plugins.'foo${bs}bar@market']
+enabled = true"
+# 鍵の先頭の plugins は、ほかの表の中の鍵でも止める（どの表の鍵かを追っていない。前からの振る舞い）
+odd_plugins "ほかの表の中の鍵が plugins" '[some.table]
+plugins = []'
+# 名前を空白で区切って回すので、* や ? のある名前がパス名に展開されると、そこにあるファイルの名前と取り違える
+: >"$fx/plain/browser@openai-bundled"
+put "$home" '[plugins."browser@*"]
+enabled = true'
+run "$fx/plain" "x"
+stopped "名前の中の * を、パス名に展開しない"
+has "名前の中の * を、パス名に展開しない: 足す行を出す" '[plugins."browser@*"]' "$ERR"
+rm -f "$fx/plain/browser@openai-bundled"
+clear_cfg
+# 下の表だけがあって本体の表が無いと、enabled の行を見る所が無い。有効かもしれないので止める
+odd_plugins "下の表だけがあって、本体の表が無い" '[plugins."newone@somewhere".settings]
+x = 1'
+# 行の先頭から照らして数えるので、改行が CRLF のとき（行末に CR が残る）と、先頭に BOM があるときに、表を見落としていた。
+# 本物の codex は、先頭に BOM がある設定を読む（2026-11-21、codex-cli 0.164.0）。どちらも、落としてから数える
+printf '[plugins."newone@somewhere"]\r\nenabled = true\r\n' >"$ch/config.toml"
+check "fixture に CR が入っている" 2 "$(tr -cd '\r' <"$ch/config.toml" | wc -c | tr -d ' ')"
+run "$fx/plain" "x"
+stopped "改行が CRLF の土台の設定で、有効なプラグインを数える"
+has "改行が CRLF の土台の設定で、有効なプラグインを数える: 足す行を出す" '[plugins."newone@somewhere"]' "$ERR"
+printf '\357\273\277[plugins."newone@somewhere"]\nenabled = true\n' >"$ch/config.toml"
+check "fixture の先頭に BOM が入っている" "efbbbf" "$(head -c 3 "$ch/config.toml" | od -An -tx1 | tr -d ' \n')"
+run "$fx/plain" "x"
+stopped "先頭に BOM がある土台の設定で、有効なプラグインを数える"
+has "先頭に BOM がある土台の設定で、有効なプラグインを数える: 足す行を出す" '[plugins."newone@somewhere"]' "$ERR"
+clear_cfg
+# かっこの内側に空白があっても、数える（通るだけでは、数えずに素通りしたのと見分けられないので、切っていない名前で見る）
+put "$home" '[ plugins."newone@somewhere" ]
+enabled = true'
+run "$fx/plain" "x"
+stopped "かっこの内側に空白がある表の、有効なプラグインを数える"
+has "かっこの内側に空白がある表の、有効なプラグインを数える: 足す行を出す" '[plugins."newone@somewhere"]' "$ERR"
+# 止めすぎない。数えられる形の揺れと、鍵の先頭でない所の plugins は通す
+put "$home" '[ plugins."browser@openai-bundled" ]
+enabled = true
+
+[plugins."browser@openai-bundled" . settings]
+x = 1'
+run "$fx/plain" "x"
+passed "かっこの内側と、下の表のドットの前後の空白"
+put "$home" '[marketplaces.some]
+source = "/opt/plugins/some"
+
+[projects."/Users/me/my-plugins"]
+trust_level = "trusted"'
+run "$fx/plain" "x"
+passed "値の中と、ほかの表の名前の中の plugins"
 clear_cfg
 
 finish
