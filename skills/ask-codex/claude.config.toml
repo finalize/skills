@@ -1,7 +1,6 @@
 # Claude Code から `codex exec -p claude` で呼ぶとき専用のプロファイル。
 # 対話用の ~/.codex/config.toml は変更しない(これを上に重ねるだけ)。
-# 実体はこのスキルの中にあり、~/.codex/claude.config.toml から symlink している。
-# 切っているプラグインは openai-bundled / openai-primary-runtime の名前なので、環境が違えば合わせる。
+# 実体はこのスキルの中にあり、install.sh が ~/.codex/claude.config.toml から symlink する。
 # model は書かない。~/.codex/config.toml のものに従う。
 model_reasoning_effort = "max"
 approval_policy = "never"
@@ -12,10 +11,11 @@ notify = []
 # ここに書いた読めなくする決まりが効かなくなる。sandbox_mode は書かない(ask.sh は、見つけたら止まる)。
 default_permissions = "claude-read"
 
-# 非対話の呼び出しでは不要。起動を遅くする。
-[mcp_servers.node_repl]
-enabled = false
+# MCP はここでは切らない。ask.sh が、Codex から見える MCP を呼び出しのたびに全部切る。
+# ここに [mcp_servers.<名前>] を書くと、その MCP が無い Mac では「invalid transport」で落ちる(2026-11-20)。
 
+# プラグインは名前で切る。入っていない名前を書いても害は無い。
+# ask.sh は、~/.codex/config.toml で有効なプラグインのうち、ここで切っていないものがあれば、呼ばずに止まって足す行を出す。
 [plugins."browser@openai-bundled"]
 enabled = false
 
@@ -29,6 +29,9 @@ enabled = false
 enabled = false
 
 [plugins."codex-app-tools@openai-bundled"]
+enabled = false
+
+[plugins."figma@openai-curated"]
 enabled = false
 
 # 文書を読み書きするプラグイン。シェルのコマンドとは別の経路でファイルを開けるかもしれないので切る
@@ -55,7 +58,11 @@ enabled = false
 description = "Claude Code から頼む読むだけの仕事。秘密と実データの置き場は読めない"
 extends = ":read-only"
 
-# 場所で止める。ask.sh は、-C がこの中を指していたら止まる(作業のディレクトリにすると、読めるようになるため)
+# 場所で止める。ask.sh は、-C がこの中を指していたら止まる(作業のディレクトリにすると、読めるようになるため)。
+# 案件ごとの場所(受け取ったデータの置き場など)は、ここには書かない。このファイルは公開される。
+# 公開しない ~/.codex/config.toml の [permissions.claude-read.filesystem] に、deny の行だけを足す。
+# そこに deny 以外が書いてあると、ask.sh は止まる。足したら SKILL.md の「守ること」の確かめ方で、止まるのを見る。
+# シェルの起動ファイル(~/.zshrc など)は止めていない。止めると、Codex が動かすシェルの PATH が壊れる。
 [permissions.claude-read.filesystem]
 "~/.ssh" = "deny"
 "~/.aws" = "deny"
@@ -65,10 +72,22 @@ extends = ":read-only"
 "~/.netrc" = "deny"
 "~/.git-credentials" = "deny"
 "~/.npmrc" = "deny"
-# お客様のデータと、その分析の出力(synCLO の PoC。リポジトリの外にある)
-"~/github.com/nexgenjapan/data" = "deny"
+"~/.kube" = "deny"
+"~/.gnupg" = "deny"
+# Codex 自身と Claude Code の認証・設定、会話の記録(Claude が読んだ実データの抜粋が入りうる)、シェルの履歴
+"~/.codex/auth.json" = "deny"
+"~/.claude.json" = "deny"
+"~/.claude/projects" = "deny"
+"~/.zsh_history" = "deny"
+"~/.bash_history" = "deny"
+# wrangler(Cloudflare)のログインの置き場
+"~/.wrangler" = "deny"
+"~/.config/.wrangler" = "deny"
+"~/Library/Preferences/.wrangler" = "deny"
 
-# 名前で止める。ディスクのどこにあっても(作業のディレクトリの外でも)止まる
+# 名前で止める。ディスクのどこにあっても(作業のディレクトリの外でも)止まる。
+# 名前の決まりは deny しか書けない(読めるように戻す書き方が無い)。だから .env.* をまとめては止めない。
+# 変数の名前を見るための .env.example と .env.sample は読めるままにする。
 [permissions.claude-read.filesystem."/"]
 "**/.env" = "deny"
 "**/.env.local" = "deny"
@@ -77,20 +96,40 @@ extends = ":read-only"
 "**/.env.production" = "deny"
 "**/.env.test" = "deny"
 "**/.env.deploy" = "deny"
+"**/.env.staging" = "deny"
+"**/.env.stg" = "deny"
+"**/.env.prod" = "deny"
+"**/.env.dev" = "deny"
+"**/.env.preview" = "deny"
+"**/.envrc" = "deny"
+"**/.dev.vars" = "deny"
+"**/.dev.vars.*" = "deny"
 "**/*.pem" = "deny"
 "**/*.key" = "deny"
+"**/*.p8" = "deny"
 "**/*.p12" = "deny"
 "**/*.pfx" = "deny"
+"**/*.keystore" = "deny"
 "**/*credentials*.json" = "deny"
 "**/*service-account*.json" = "deny"
+"**/*service_account*.json" = "deny"
 "**/*serviceaccount*.json" = "deny"
+"**/*firebase-adminsdk*.json" = "deny"
 "**/*-sa-key*.json" = "deny"
 "**/*-key.json" = "deny"
-# お客様から受け取った資料(synCLO の docs に置いてある)
+"**/*.tfvars" = "deny"
+"**/*.tfstate" = "deny"
+# 受け取った資料(docs の下に置かれた Office の文書、PDF、表、まとめたファイル)
 "**/docs/**/*.docx" = "deny"
+"**/docs/**/*.doc" = "deny"
 "**/docs/**/*.xlsx" = "deny"
+"**/docs/**/*.xlsm" = "deny"
+"**/docs/**/*.xls" = "deny"
+"**/docs/**/*.csv" = "deny"
 "**/docs/**/*.pdf" = "deny"
 "**/docs/**/*.pptx" = "deny"
+"**/docs/**/*.ppt" = "deny"
+"**/docs/**/*.zip" = "deny"
 
 # ask.sh -w のとき。claude-read の決まりのまま、作業ディレクトリと、自分用の一時ディレクトリ($TMPDIR)にだけ書ける
 [permissions.claude-write]
@@ -100,5 +139,8 @@ extends = "claude-read"
 [permissions.claude-write.filesystem]
 ":tmpdir" = "write"
 
+# .git と .codex は、Codex が初めから書けなくしている。.claude(設定とフックの置き場)も読むだけにする。
+# 書けると、次の Claude Code のセッションで任意のコマンドを動かせる。
 [permissions.claude-write.filesystem.":workspace_roots"]
 "." = "write"
+".claude" = "read"

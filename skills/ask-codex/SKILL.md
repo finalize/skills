@@ -1,6 +1,6 @@
 ---
 name: ask-codex
-description: Claude Code が Codex に別視点を頼むとき。実装後の差分レビュー、同じ仮説を二度外したバグの原因調査、独立したタスクの分担、実装に入る前の計画の穴探し(反論役)。自分の仕事を見直して終えたくなったときにも。コードや文書をまたぐ調査、文書の下書き、設計の案を Codex に寄せて、Claude のトークンを減らしたいときにも。呼び方、プロンプトの書き方、返事を確かめて採る手順。
+description: Claude Code が Codex に別視点を頼むとき。実装後の差分レビュー（数行の直しと文書だけの変更は除く）、同じ仮説を二度外したバグの原因調査、実装に入る前の計画の穴探し（反論役）、読む量の多い調査や下書きの肩代わり。既定の推論では1回に数分〜10分かかる。呼び方、プロンプトの書き方、返事を確かめて採る手順。
 ---
 
 # Codex に頼む
@@ -11,23 +11,26 @@ description: Claude Code が Codex に別視点を頼むとき。実装後の差
 ## 向くとき・向かないとき
 - 向く: 実装後の差分レビュー。原因の見当が2回外れたバグ。実装前の計画の穴探し。互いに独立した作業の分担。
   Claude が何十回も grep や cat をすることになる調査と、文書の下書きの事実集め(下の「調査・下書きを頼む」)。
-- 向かない: 前提が曖昧な探索。細かい往復が要る試行錯誤。こちらの会話文脈に強く依存する作業。
+- 向かない: 数行の直しや、文書だけの変更の見直し。前提が曖昧な探索。細かい往復が要る試行錯誤。こちらの会話文脈に強く依存する作業。
+- かかるもの: 既定の推論(max)は重い。差分レビュー1回で9分半・入力170万トークンの例がある(`references/delegate.md`)。
 
 ## 呼び方
-`scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は max、読むだけで秘密と実データの
-置き場は読めない、Codex が動かすコマンドはネットワークにつながらない、不要な MCP とプラグインを切る)を重ね、
-最終回答だけを返す。終わると、Codex が使ったトークンを標準エラーに1行出す。プロファイルは `~/.codex/claude.config.toml` から
-このディレクトリのファイルへ symlink しておく。無ければ `ask.sh` が張り方を出して止まる。
+`${CLAUDE_SKILL_DIR}/scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は max、読むだけで秘密と実データの
+置き場は読めない、Codex が動かすコマンドはネットワークにつながらない、プラグインを切る)を重ね、Codex から見える MCP を全部切って、
+最終回答だけを返す。終わると、Codex が使ったトークンを標準エラーに1行出す。プロファイルは、リポジトリの `install.sh` が
+`~/.codex/claude.config.toml` からこのディレクトリのファイルへ symlink する。無ければ `ask.sh` が張り方を出して止まる。
 
 ```bash
 # 差分レビュー(読み取り専用)
-~/.claude/skills/ask-codex/scripts/ask.sh -C <repo> "<プロンプト>"
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> "<プロンプト>"
 # 既定は max で遅い。run_in_background で走らせ、その間に自分の作業を進める
 # 軽い確認は推論を下げる
-~/.claude/skills/ask-codex/scripts/ask.sh -e low -C <repo> "<プロンプト>"
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -e low -C <repo> "<プロンプト>"
 # 長いプロンプトは標準入力から
-~/.claude/skills/ask-codex/scripts/ask.sh -C <repo> - < prompt.md
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> - < prompt.md
 ```
+
+オプションはプロンプトの前に書く(後ろに書くと、効かないまま走らずに止まる)。回答が空なら、失敗として返る。
 
 `codex exec` を直接呼ぶなら、`-p claude` を付け、`-s`(`--sandbox`)は付けない(下の「守ること」)。
 プロンプトを引数で渡すとき必ず `< /dev/null` を付ける。付けないと、標準入力の EOF を待って止まる(実際に200秒止まった)。
@@ -48,12 +51,12 @@ Codex はこの会話を知らない。次を書く。
 
 ## 実装前の計画の反論役
 実装に入る前に計画を攻めさせるときは、先に `references/challenge-plan.md` を読み、その手順に従う。
-反論は採りすぎても退けすぎても計画を悪くするので、`-S` でスキーマ(`schemas/objections.json`)を付けて形を縛り、
+反論は採りすぎても退けすぎても計画を悪くするので、`-S objections` でスキーマ(`schemas/objections.json`)を付けて形を縛り、
 確かめて採否を決め、全件を表で報告する。
 
 ## 調査・下書きを頼む(Claude のトークンを寄せる)
 Claude が読む量の多い仕事を Codex に寄せるときは、先に `references/delegate.md` を読み、その手順に従う。
-`-S` でスキーマ(`schemas/report.json`)を付け、主張ごとの根拠、調べた範囲と見ていない範囲、人が決めることを出させる。
+`-S report` でスキーマ(`schemas/report.json`)を付け、主張ごとの根拠、調べた範囲と見ていない範囲、人が決めることを出させる。
 精査は根拠の箇所だけを開いて確かめ、元の資料を全部読み直さない。確かめで見つかるのは間違いで、抜けは見つからないので、
 頼む前に自分の予想を書いておき、報告と比べる。
 
@@ -61,14 +64,24 @@ Claude が読む量の多い仕事を Codex に寄せるときは、先に `refe
 - 秘密(認証情報、`.env` の中身)をプロンプトに入れない。
 - Claude Code の除外設定(`.claude/settings.json`)は Codex に効かない。代わりに、プロファイルの permissions で
   秘密と実データの置き場を読めなくしてある(`claude-read`、`-w` のときは `claude-write`)。名前(`.env`、鍵など)は
-  ディスクのどこでも、場所(`~/.ssh`、データのフォルダなど)はその下を止める。
-  - 次の3つでは効かなくなるので、`ask.sh` は見つけたら呼ばずに止まる。どこかの設定(`~/.codex/config.toml`、
-    リポジトリの `.codex/config.toml`)に `sandbox_mode` がある。リポジトリの `.codex/config.toml` が `claude-read` /
-    `claude-write` を書き換えている。`-C` が、場所で止めたディレクトリの中にある
+  ディスクのどこでも、場所(`~/.ssh`、会話の記録など)はその下を止める。
+  - 案件ごとの場所(受け取ったデータの置き場など)は、公開されるプロファイルには書かない。公開しない `~/.codex/config.toml` に、
+    `[permissions.claude-read.filesystem]` の表で `"<場所>" = "deny"` の行だけを足す。deny 以外を書くと `ask.sh` は止まる
+  - 次のときは決まりが効かなくなるか、効いているかを確かめられないので、`ask.sh` は呼ばずに止まる。
+    止まったら、理由を利用者に伝えて判断を待つ。守りを通すために、プロファイルや Codex の設定を自分で書き換えない
+    - どこかの設定に `sandbox_mode` がある。見るのは `~/.codex/config.toml`、`/etc/codex`、`-C` からリポジトリの根までの全部の `.codex/config.toml`
+    - リポジトリの設定が `claude-read` / `claude-write` かプラグインに触れている。または、リポジトリの設定の MCP が `codex mcp list` に出ない
+    - `-C` が、場所で止めたディレクトリの中にある
+    - `~/.codex/config.toml` で有効なプラグインを、プロファイルが切っていない(足す行が出る。足すのは利用者)
+  - MCP とプラグインは、読めなくする決まりの外で動く。だから全部切っている。MCP が要る仕事は、`ask.sh` では頼まない
   - `ask.sh` を通さずに `-s` を渡しても効かなくなる
   - 止めているのは、決まった名前と場所、Codex が動かすコマンドだけ。ほかの名前で置いた秘密は読める
-  - 決まりを足したら、`codex sandbox -p claude -P claude-read -C <ダミーのディレクトリ> -- cat <ダミーのファイル>` で止まるのを見る
+  - 決まりを足したら、リポジトリの `tests/sandbox.sh` を流すか、`codex sandbox -p claude -P claude-read -C <ダミーのディレクトリ> -- cat <ダミーのファイル>` で止まるのを見る
 - 書き込みを許す `-w` は、Claude Code が同じファイルを触っていないときだけ。同時編集は `git worktree` で分ける。
+  `.git`・`.codex`・`.claude` には書けない。終わったら、次へ進む前に `git status` と差分を見る
+  (`CLAUDE.md`、CI、スクリプトのように、後で誰かが動かすものが書き換わっていないか)。
 - 推論の目安: レビュー、設計、難しいバグは既定の max のまま。小さな差分は `-e xhigh`、事実確認や一行の質問だけ `-e low`。`ultra` は自動で作業を分担し使用量が読めないので使わない。
 - モデルは固定しない。`~/.codex/config.toml` の `model` に従う。変えるなら `codex exec -m` を直接使う。
 - 失敗したら、ラッパーが出すログのパスを読んで原因を見る。同じ呼び出しを繰り返さない。
+
+測った記録(起動の時間、反論役、権限の確かめ)は `references/measured.md`。使うときに読む必要はない。

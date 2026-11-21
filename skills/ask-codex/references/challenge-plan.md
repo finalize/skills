@@ -5,7 +5,8 @@
 だから形式と手順で縛る。
 
 ```bash
-~/.claude/skills/ask-codex/scripts/ask.sh -S ~/.claude/skills/ask-codex/schemas/objections.json -C <repo> - < plan-prompt.md
+# ask.sh の場所は SKILL.md の「呼び方」と同じ。-S objections は、このスキルの schemas/objections.json を指す
+<このスキルの scripts>/ask.sh -S objections -C <repo> - < plan-prompt.md
 ```
 
 `plan-prompt.md` に書くこと:
