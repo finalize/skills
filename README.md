@@ -32,6 +32,18 @@ Claude Code が前提のスキル（`ask-codex`・`dispatch-tasks`）には `.cl
 
 ## 入れる
 
+### 前提
+
+| 使うもの | 要るもの |
+|---|---|
+| どのスキルも | Claude Code。`install.sh` は bash で動く |
+| `ask-codex` | Codex の CLI（`codex`。ログイン済みであること）と `jq`。codex-cli 0.164.0 で確かめた |
+| `dispatch-tasks` | Rex（`rex`）、`jq`、`git`。子が Codex を呼ぶので、`ask-codex` の前提も要る |
+
+スクリプトは macOS（bash 3.2 と BSD の道具）で動かしている。ほかの OS では確かめていない。
+
+### 初めて入れる
+
 ```sh
 git clone git@github.com:finalize/skills.git ~/workspace/skills
 ~/workspace/skills/install.sh
@@ -39,8 +51,39 @@ git clone git@github.com:finalize/skills.git ~/workspace/skills
 
 Claude Code はセッション開始時にスキル一覧を読む。反映されなければ起動し直す。
 
-`ask-codex` を使うなら、案件ごとの読ませない場所（受け取ったデータの置き場など）を、公開しない
-`~/.codex/config.toml` に足す。書き方は `skills/ask-codex/SKILL.md` の「守ること」。
+`install.sh` は、Codex の置き場（`~/.codex`）があれば、`ask-codex` のプロファイルも `~/.codex/claude.config.toml` に張る。
+
+### ask-codex を使う前に
+
+- 案件ごとの読ませない場所（受け取ったデータの置き場など）を、公開しない `~/.codex/config.toml` に足す。
+  足せるのは deny の行だけ。書き方は `skills/ask-codex/SKILL.md` の「守ること」。
+
+  ```toml
+  [permissions.claude-read.filesystem]
+  "~/path/to/received-data" = "deny"
+  ```
+
+- `ask.sh` が「有効なプラグインを、プロファイルが切っていない」と言って止まったら、出てきた行を
+  `skills/ask-codex/claude.config.toml` に足す（Codex で有効にしているプラグインは、環境ごとに違う）。
+- 足したら `tests/sandbox.sh` を流して、止まるのを見る。
+
+### 更新するとき
+
+```sh
+pgrep -f 'heavy.sh|ask.sh'    # 何も出ないこと（張ってあるスクリプトを、ほかのセッションが動かしていない）
+git -C ~/workspace/skills pull --ff-only
+~/workspace/skills/install.sh
+```
+
+`pull` した時点で、張ってあるスキルは新しい版に替わる（symlink の先が、この作業ツリーなので）。
+`install.sh` も流し直す。増えたスキルを張り、消えたスキルと、Claude Code 専用になったスキルの `~/.agents/skills` の symlink を外す。
+
+`~/.codex/claude.config.toml` が symlink でなく実ファイル（手で置いた写し）だと、`install.sh` は上書きせずに知らせる。
+そのときは、次の順でやる。逆にすると、その間は、写しにだけ書いてあった場所が読める。
+
+1. 写しにだけ書いてある決まり（案件ごとの場所など）を、`~/.codex/config.toml` に移す
+2. 写しを消して、`install.sh` を流し直す
+3. `ask.sh -e low` を1回流して、通るのを見る
 
 ## 中身
 
