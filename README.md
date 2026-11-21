@@ -9,13 +9,19 @@ Claude Code に覚えさせておきたい、**自分で書いたスキル**を�
 ## 置き場所の分担
 
 ```
-~/workspace/skills/skills/<名前>/SKILL.md   ← ここ（git で追う）
-        ↓ symlink
+<クローンした場所>/skills/<名前>/SKILL.md    ← ここ（git で追う）。main の作業ツリーが、そのまま張る元
+        ↓ symlink（install.sh）
 ~/.claude/skills/<名前>/                     ← Claude Code
 ~/.agents/skills/<名前>/                     ← Codex・Cursor・Gemini CLI（Claude Code 専用のスキルは張らない）
 ~/.codex/claude.config.toml                  ← ask-codex のプロファイル（Codex が入っているとき）
 ~/.claude/skills/wrangler/ など              ← 入れただけのスキル。実ディレクトリのまま、git で追わない
 ```
+
+**クローンは1つにして、そこから張る。** 置き場所はどこでもよい（`install.sh` は、自分のある場所から張る）。
+張る元と作業用でクローンを分けると、張ってある側が古いままになる。
+
+symlink の先は作業ツリーなので、**main の作業ツリーの中身が、そのまま全部のセッションに効く**。
+ブランチを切り替えたり、書きかけを置いたりすると、ほかのセッションがそれを使う。直す作業は `git worktree` でやる（下の「直すとき」）。
 
 `~/.claude/skills` は Cloudflare 一式など**入れたスキルと同居している**。
 だからディレクトリごと symlink にはせず、**スキル1つずつ張る**。
@@ -45,8 +51,8 @@ Claude Code が前提のスキル（`ask-codex`・`dispatch-tasks`）には `.cl
 ### 初めて入れる
 
 ```sh
-git clone git@github.com:finalize/skills.git ~/workspace/skills
-~/workspace/skills/install.sh
+git clone git@github.com:finalize/skills.git    # 置き場所はどこでもよい。ここでは、いまいる場所の skills に入る
+./skills/install.sh
 ```
 
 Claude Code はセッション開始時にスキル一覧を読む。反映されなければ起動し直す。
@@ -63,14 +69,32 @@ Claude Code はセッション開始時にスキル一覧を読む。反映さ�
 
 ### 更新するとき
 
+クローンした場所（main の作業ツリー）で流す。
+
 ```sh
 pgrep -f 'heavy.sh|ask.sh'    # 何も出ないこと（張ってあるスクリプトを、ほかのセッションが動かしていない）
-git -C ~/workspace/skills pull --ff-only
-~/workspace/skills/install.sh
+git pull --ff-only
+./install.sh
 ```
 
 `pull` した時点で、張ってあるスキルは新しい版に替わる（symlink の先が、この作業ツリーなので）。
 `install.sh` も流し直す。増えたスキルを張り、消えたスキルと、Claude Code 専用になったスキルの `~/.agents/skills` の symlink を外す。
+
+クローンを別の場所へ移したときも、移した先で `install.sh` を流す。symlink を張り直し、古い場所を指して切れたものを外す。
+
+### 直すとき
+
+main の作業ツリーは張る元なので、そこでは直さない。`git worktree` を切って、そこで直す。
+
+```sh
+git worktree add ../skills-fix -b <ブランチ>    # 置き場所はどこでもよい
+# 直して、main に入れる
+git worktree remove ../skills-fix
+git pull --ff-only                               # main の作業ツリーで。上の「更新するとき」と同じ
+```
+
+`ask.sh` を直している間に Codex の見直しを頼むときは、張ってある版（`~/.claude/skills/ask-codex/scripts/ask.sh`）で呼ぶ。
+直している最中のスクリプトをその場で動かすと、書き換えたところで壊れる。
 
 `~/.codex/claude.config.toml` が symlink でなく実ファイル（手で置いた写し）だと、`install.sh` は上書きせずに知らせる。
 そのときは、次の順でやる。
