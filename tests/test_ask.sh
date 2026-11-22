@@ -195,7 +195,7 @@ RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
 stopped "CODEX_HOME の下を、大文字と小文字が違う名前で止めている"
 # プロファイルに場所として書けない文字（* 引用符 バックスラッシュ 改行）がある CODEX_HOME は、確かめられないので止まる。
 # 足す行は案内しない（* を含む行は場所として読まれないので、足しても通らない。引用符や改行は、行にそのまま書けない）
-for odd in "star*codex" "quote\"codex" "$(printf 'nlcodex\nx')"; do
+for odd in "star*codex" "quote\"codex" "apos'codex" 'back\slash' "$(printf 'nlcodex\nx')"; do
   mkdir -p "$fx/$odd"
   cp "$PROFILE_SRC" "$fx/$odd/claude.config.toml"
   RUN_CODEX_HOME="$fx/$odd" run "$fx/plain" "x"
