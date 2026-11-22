@@ -164,13 +164,16 @@ stopped "CODEX_HOME が別の場所で、その下を止めていない"
 for f in auth.json history.jsonl sessions archived_sessions; do
   has "CODEX_HOME が別の場所: 足す行を出す（${f}）" "\"$alt/$f\" = \"deny\"" "$ERR"
 done
-alt_profile() { # alt_profile <足す名前...> : ~/.codex 用の決まりに、$alt の下の場所を足したプロファイルを置く
-  local f
+# alt_profile <足す名前...> : ~/.codex 用の決まりに、$alt の下の場所を足したプロファイルを置く。
+#   足す先は ALT_TABLE の表（既定は claude-read の場所の表）
+alt_profile() {
+  local f table=${ALT_TABLE:-claude-read}
   : >"$fx/alt-lines"
   for f in "$@"; do printf '"%s" = "deny"\n' "$alt/$f" >>"$fx/alt-lines"; done
-  sed "/^\[permissions\.claude-read\.filesystem\]\$/r $fx/alt-lines" "$PROFILE_SRC" >"$alt/claude.config.toml"
-  # fixture の確認: 足した行が、場所の表の中に入ったこと
-  check "fixture: 足した ${#} 行がプロファイルに入った" "$#" "$(grep -c "^\"$alt/" "$alt/claude.config.toml")"
+  sed "/^\[permissions\.$table\.filesystem\]\$/r $fx/alt-lines" "$PROFILE_SRC" >"$alt/claude.config.toml"
+  # fixture の確認: 足した行が、その表の見出しのすぐ下に入ったこと
+  check "fixture: 足した ${#} 行が ${table} の表に入った" "$#" \
+    "$(grep -A "$#" "^\[permissions\.$table\.filesystem\]\$" "$alt/claude.config.toml" | grep -c "^\"$alt/")"
 }
 alt_profile auth.json history.jsonl sessions archived_sessions
 RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
@@ -180,6 +183,38 @@ RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
 stopped "CODEX_HOME が別の場所で、1つ（会話の記録）だけ止めていない"
 has "CODEX_HOME が別の場所: 欠けた1つだけを出す" "\"$alt/sessions\" = \"deny\"" "$ERR"
 lacks "CODEX_HOME が別の場所: 止めてあるものは出さない" "\"$alt/auth.json\"" "$ERR"
+has "CODEX_HOME が別の場所: 足す先の表を言う" "[permissions.claude-read.filesystem]" "$ERR"
+# 止めたことにするのは、読むだけの権限（claude-read）の場所の表に書いたものだけ。
+# 書く権限（claude-write）の表にだけ足しても、ふつうの呼び出し（読むだけ）では止まらない
+ALT_TABLE=claude-write alt_profile auth.json history.jsonl sessions archived_sessions
+RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
+stopped "CODEX_HOME の下を、書く権限の表でだけ止めている"
+# 大文字と小文字が違う書き方は、止めたことにしない（区別するファイルシステムでは、別の場所）
+alt_profile AUTH.JSON HISTORY.JSONL SESSIONS ARCHIVED_SESSIONS
+RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
+stopped "CODEX_HOME の下を、大文字と小文字が違う名前で止めている"
+# プロファイルに場所として書けない文字（* 引用符 バックスラッシュ 改行）がある CODEX_HOME は、確かめられないので止まる。
+# 足す行は案内しない（* を含む行は場所として読まれないので、足しても通らない。引用符や改行は、行にそのまま書けない）
+for odd in "star*codex" "quote\"codex" "$(printf 'nlcodex\nx')"; do
+  mkdir -p "$fx/$odd"
+  cp "$PROFILE_SRC" "$fx/$odd/claude.config.toml"
+  RUN_CODEX_HOME="$fx/$odd" run "$fx/plain" "x"
+  stopped "CODEX_HOME に書けない文字 [${odd}]"
+  has "CODEX_HOME に書けない文字 [${odd}]: 理由を言う" "場所として書けない文字" "$ERR"
+  lacks "CODEX_HOME に書けない文字 [${odd}]: 足す行を案内しない" "に次を足す" "$ERR"
+done
+# 名前の終わりが改行の CODEX_HOME。コマンド置換は末尾の改行を落とすので、隣の ~/.codex と取り違えやすい
+nl_home=$(printf '%s\nx' "$ch")
+nl_home=${nl_home%x}
+mkdir -p "$nl_home"
+cp "$PROFILE_SRC" "$nl_home/claude.config.toml"
+RUN_CODEX_HOME="$nl_home" run "$fx/plain" "x"
+stopped "CODEX_HOME の名前の終わりが改行"
+has "CODEX_HOME の名前の終わりが改行: 理由を言う" "場所として書けない文字" "$ERR"
+# その場所への symlink（名前に改行は無い）。辿った先を ~/.codex と取り違えない
+ln -s "$nl_home" "$fx/nl-link"
+RUN_CODEX_HOME="$fx/nl-link" run "$fx/plain" "x"
+stopped "CODEX_HOME が、名前の終わりが改行の場所への symlink"
 # HOME の下なら、足す行は ~/ で出す（プロファイルのほかの行と同じ書き方。利用者の名前が入った場所を書かせない）
 mkdir -p "$home/.codex-alt"
 cp "$PROFILE_SRC" "$home/.codex-alt/claude.config.toml"
@@ -252,6 +287,15 @@ run "$fx" -C "$fx/elsewhere/link" "x"
 stopped "止めた場所の中（symlink 経由）"
 run "$fx" -C "$home" "x"
 passed "止めた場所の親"
+# 場所の deny が / なら、どの作業ディレクトリもその中。現在地と取り違えない（現在地と -C を別にして見る）
+sed "/^\[permissions\.claude-read\.filesystem\]\$/a\\
+\"/\" = \"deny\"
+" "$PROFILE_SRC" >"$ch/claude.config.toml"
+check "fixture: / の deny が場所の表に入った" 1 "$(grep -c '^"/" = "deny"$' "$ch/claude.config.toml")"
+run "$fx/elsewhere" -C "$fx/plain" "x"
+stopped "場所の deny が /"
+has "場所の deny が /: 理由を言う" "読めなくした / の中にある" "$ERR"
+cp "$PROFILE_SRC" "$ch/claude.config.toml"
 
 # --- 土台の設定（~/.codex/config.toml）がプロファイルの permissions に触れる
 # ここが設計の判断: 読めなくする場所は、プロファイルにだけ書く。土台の設定は、deny を足すだけでも止める（リポジトリの設定と同じ）。

@@ -108,7 +108,7 @@ stop() { # 理由には設定の行を入れることがある。macOS の sh �
   printf '%s\n' "$handoff" >&2
   exit 1
 }
-lower() { printf '%s/' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
+lower() { printf '%s/' "${1%/}" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
 
 # パス $1 を、実体のパスにして出す。ディレクトリなら、そのまま辿る。ファイルなら、親のディレクトリを辿って名前を付け直す。
 # どちらも辿れなければ (まだ無い場所)、書かれたまま出す
@@ -121,46 +121,72 @@ real_of() {
     printf '%s\n' "$1"
   fi
 }
+# プロファイルに書かれた場所 $1 (~/ か / で始まる) を、実体のパスにして出す
+place_of() {
+  p=$1
+  # shellcheck disable=SC2088 # 設定に書かれた文字どおりの ~/ と比べている (シェルに展開させたいのではない)
+  case $p in "~/"*) p="${HOME:-}/${p#\~/}" ;; esac
+  p=${p%/}
+  [ -n "$p" ] || p=/ # 場所が / そのもの
+  real_of "$p"
+}
 
 # 1) プロファイルの、場所 (~/ か / で始まり、* を含まない) の deny。場所を書くのはプロファイルだけ (ほかの設定が足していたら、下で止まる)
 deny_re="s/^[[:space:]]*[\"']((~\\/|\\/)[^\"'*]*)[\"'][[:space:]]*=[[:space:]]*[\"']deny[\"'].*/\\1/p"
 denied_dirs=$(sed -nE "$deny_re" "$profile") || stop "$profile を読めない"
 [ -n "$denied_dirs" ] || stop "$profile から、場所で読めなくしたディレクトリを読み取れない"
+# どの表に書いた deny でも見る。大文字と小文字は区別しない (区別しないファイルシステムで、書き方の違う同じ場所を通さない)
 abs_lower=$(lower "$abs_dir")
-denied_real="" # 読めなくした場所を、実体のパスにして小文字にしたもの (1行に1つ、末尾は /)
 while IFS= read -r d; do
   [ -n "$d" ] || continue
-  # shellcheck disable=SC2088 # 設定に書かれた文字どおりの ~/ と比べている (シェルに展開させたいのではない)
-  case $d in "~/"*) d="${HOME:-}/${d#\~/}" ;; esac
   # シンボリックリンクを含むなら、作業ディレクトリと同じく実体のパスで比べる
-  d=$(real_of "${d%/}")
-  dl=$(lower "$d")
-  denied_real="$denied_real
-$dl"
+  d=$(place_of "$d")
   case "$abs_lower" in
-    "$dl"*) stop "作業ディレクトリ $abs_dir は、読めなくした $d の中にある" ;;
+    "$(lower "$d")"*) stop "作業ディレクトリ $abs_dir は、読めなくした $d の中にある" ;;
   esac
 done <<LIST
 $denied_dirs
 LIST
 
 # Codex 自身の認証と記録は、CODEX_HOME の下にある。プロファイルは ~/.codex の下を場所で止めているので、
-# CODEX_HOME が別の場所を指していると、その下は止まらない。止めていなければ、足す行を出して止まる
+# CODEX_HOME が別の場所を指していると、その下は止まらない。止めていなければ、足す行を出して止まる。
+# ここは「止めてある」と言う側の検査なので、上とは逆に、厳しく照らす:
+#   読むだけの権限 (claude-read) の場所の表に書いたものだけを数える (書く権限の表にだけ書いても、読むだけの呼び出しでは止まらない)
+#   大文字と小文字を区別する (区別するファイルシステムでは、別の場所)
+#   実体の場所を取り違えていないかを見る (コマンド置換は、名前の終わりの改行を落とす)
+odd_home() {
+  stop "CODEX_HOME ($codex_home) に、プロファイルに場所として書けない文字 (* 引用符 バックスラッシュ 改行) がある。その下の Codex の認証と記録を読めなくしてあるかを、確かめられない"
+}
+nl='
+'
+case $codex_home in *"$nl"*) odd_home ;; esac
 codex_real=$(real_of "$codex_home")
+[ "$codex_real" -ef "$codex_home" ] || stop "CODEX_HOME ($codex_home) の実体の場所を確かめられない"
+case $codex_real in *"*"* | *'"'* | *"'"* | *"\\"* | *"$nl"*) odd_home ;; esac
+read_denied=$(sed -nE '/^\[permissions\.claude-read\.filesystem\][[:space:]]*(#.*)?$/,/^[[:space:]]*\[/p' "$profile" | sed -nE "$deny_re") ||
+  stop "$profile を読めない"
+read_real=""
+while IFS= read -r d; do
+  [ -n "$d" ] || continue
+  read_real="$read_real
+$(place_of "$d")"
+done <<LIST
+$read_denied
+LIST
 missing=""
 for f in auth.json history.jsonl sessions archived_sessions; do
-  want=$(lower "$codex_real/$f")
+  want="${codex_real%/}/$f/"
   hit=""
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    case $want in "$d"*) hit=1 ;; esac
+    case $want in "${d%/}/"*) hit=1 ;; esac
   done <<LIST
-$denied_real
+$read_real
 LIST
   [ -n "$hit" ] || missing="$missing $f"
 done
 if [ -n "$missing" ]; then
-  printf '%s\n' "止めた: CODEX_HOME ($codex_home) の下にある Codex の認証と記録を、プロファイルが読めなくしていない。$profile に次を足す:" >&2
+  printf '%s\n' "止めた: CODEX_HOME ($codex_home) の下にある Codex の認証と記録を、プロファイルが読めなくしていない。$profile の [permissions.claude-read.filesystem] の表に次を足す:" >&2
   # HOME の下なら、プロファイルのほかの行と同じく ~/ で出す
   shown=$codex_real
   home_real=$(real_of "${HOME:-/}")
