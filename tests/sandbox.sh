@@ -68,15 +68,28 @@ allowed claude-read "$out/note.txt"
 locs=".ssh/id_dummy .aws/credentials .config/gcloud/x .config/gh/hosts.yml .docker/config.json .netrc
 .git-credentials .npmrc .kube/config .gnupg/x .codex/auth.json .claude.json .claude/projects/p/s.jsonl
 .zsh_history .bash_history .wrangler/config/default.toml .config/.wrangler/config/default.toml
-Library/Preferences/.wrangler/config/default.toml"
+Library/Preferences/.wrangler/config/default.toml
+.zhistory .zsh_sessions/A1.session .zsh_sessions/A1.history
+.claude.json.backup .claude/backups/.claude.json.backup.1 .claude/history.jsonl
+.claude/file-history/s1/0123abcd@v1 .claude/paste-cache/p1.txt
+.codex/history.jsonl .codex/sessions/2026/11/22/rollout-x.jsonl .codex/archived_sessions/rollout-y.jsonl
+Library/Preferences/cloudflare/config/default.json Library/Preferences/cloudflare/state.json
+.expo/state.json .app-store/auth/someone/cookie .android/adbkey
+.config/gcloud-other/credentials.db .config/gcloud-other/configurations/config_default"
 for n in $locs; do
   mk "$home/$n"
   denied claude-read "$home/$n"
 done
-for n in .zshrc .gitconfig .claude/skills/x/SKILL.md notes.txt; do
+# 止めすぎていないこと。止めた場所の隣（同じフォルダのほかのファイル、名前の始まりが同じだけのもの）
+for n in .zshrc .gitconfig .claude/skills/x/SKILL.md notes.txt \
+  .claude/settings.json .claude/CLAUDE.md .codex/config.toml .expo/versions-cache/v.txt .android/adb_usb.ini \
+  .config/gcloudish.txt .config/other/note.txt Library/Preferences/other/x.txt; do
   mk "$home/$n"
   allowed claude-read "$home/$n"
 done
+# 名前の決まりで止めた gcloud の設定フォルダは、作業ディレクトリの中にあっても止まる
+mk "$ws/.config/gcloud-x/credentials.db"
+denied claude-read "$ws/.config/gcloud-x/credentials.db"
 
 # --- 書く権限（-w）
 w() { # w <権限> <ファイル> : 追記できれば 0

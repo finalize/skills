@@ -50,12 +50,12 @@ enabled = false
 [plugins."template-creator@openai-primary-runtime"]
 enabled = false
 
-# 読むだけ。読める範囲は read-only と同じ(ディスク全体)で、秘密と実データの置き場だけを読めなくする。
+# 読むだけ。読める範囲は read-only と同じ(ディスク全体)で、秘密の置き場と、docs の下に置かれた資料だけを読めなくする。
 # Claude Code の .claude/settings.json の除外は Codex には効かないので、同じものをここで止める。
 # 止めているのは、Codex が動かすコマンドだけ。Codex の Web 検索は OpenAI の側で動く。
 # 止めているのは決まった名前と場所だけなので、ほかの名前で置いた秘密は読める。
 [permissions.claude-read]
-description = "Claude Code から頼む読むだけの仕事。秘密と実データの置き場は読めない"
+description = "Claude Code から頼む読むだけの仕事。秘密の置き場と、docs の下の資料は読めない"
 extends = ":read-only"
 
 # 場所で止める。ask.sh は、-C がこの中を指していたら止まる(作業のディレクトリにすると、読めるようになるため)。
@@ -74,16 +74,36 @@ extends = ":read-only"
 "~/.npmrc" = "deny"
 "~/.kube" = "deny"
 "~/.gnupg" = "deny"
-# Codex 自身と Claude Code の認証・設定、会話の記録(Claude が読んだ実データの抜粋が入りうる)、シェルの履歴
+# Codex 自身と Claude Code の認証・設定と、その写し
 "~/.codex/auth.json" = "deny"
 "~/.claude.json" = "deny"
+"~/.claude.json.backup" = "deny"
+"~/.claude/backups" = "deny"
+# 会話の記録と、打ったプロンプト(読んだファイルの抜粋や、貼り付けた秘密が入りうる)。
+# file-history は Claude Code が書き換える前のファイルの写しで、名前がハッシュになるので、下の名前の決まりが効かない。
+# Codex の記録のうち、SQLite のファイル(~/.codex/*.sqlite)は止めていない(何が入っているかを確かめていない)
 "~/.claude/projects" = "deny"
+"~/.claude/history.jsonl" = "deny"
+"~/.claude/file-history" = "deny"
+"~/.claude/paste-cache" = "deny"
+"~/.codex/history.jsonl" = "deny"
+"~/.codex/sessions" = "deny"
+"~/.codex/archived_sessions" = "deny"
+# シェルの履歴。zsh は HISTFILE で場所が変わる(~/.zhistory にしている環境があった)。
+# ~/.zsh_sessions は、macOS のターミナルがセッションごとに残す履歴
 "~/.zsh_history" = "deny"
+"~/.zhistory" = "deny"
+"~/.zsh_sessions" = "deny"
 "~/.bash_history" = "deny"
-# wrangler(Cloudflare)のログインの置き場
+# Cloudflare のログインの置き場。wrangler と、cf CLI(macOS で見た場所。中に oauth_token と refresh_token があった)
 "~/.wrangler" = "deny"
 "~/.config/.wrangler" = "deny"
 "~/Library/Preferences/.wrangler" = "deny"
+"~/Library/Preferences/cloudflare" = "deny"
+# Expo のログイン(state.json)、EAS が置く Apple ID のセッション(~/.app-store)、adb の秘密鍵
+"~/.expo/state.json" = "deny"
+"~/.app-store" = "deny"
+"~/.android/adbkey" = "deny"
 
 # 名前で止める。ディスクのどこにあっても(作業のディレクトリの外でも)止まる。
 # 名前の決まりは deny しか書けない(読めるように戻す書き方が無い)。だから .env.* をまとめては止めない。
@@ -119,6 +139,9 @@ extends = ":read-only"
 "**/*-key.json" = "deny"
 "**/*.tfvars" = "deny"
 "**/*.tfstate" = "deny"
+# gcloud の設定フォルダ。CLOUDSDK_CONFIG で分けた2つ目(~/.config/gcloud-<何か>)も、名前の始まりで止める。
+# 場所の表に "~/.config/gcloud*" と書いても、フォルダの中は止まらなかった(2026-11-22、codex-cli 0.164.0)
+"**/.config/gcloud*/**" = "deny"
 # 受け取った資料(docs の下に置かれた Office の文書、PDF、表、まとめたファイル)
 "**/docs/**/*.docx" = "deny"
 "**/docs/**/*.doc" = "deny"
