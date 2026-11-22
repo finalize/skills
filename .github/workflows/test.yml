@@ -1,6 +1,7 @@
 name: test
 
-# push は main だけ。ブランチの push でも走らせると、PR を開いている間、同じテストが2本ずつ走る
+# push は main だけ。ブランチの push でも走らせると、PR を開いている間、同じテストが2本ずつ走る。
+# PR を開いていないブランチと、タグの push では走らない（タグは、いまは使っていない）
 on:
   push:
     branches: [main]

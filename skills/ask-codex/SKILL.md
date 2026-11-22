@@ -30,7 +30,9 @@ ${CLAUDE_SKILL_DIR}/scripts/ask.sh -e low -C <repo> "<プロンプト>"
 ${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> - < prompt.md
 # 返事を踏まえて続きを聞くなら、-k で残す。標準エラーに出る続け方のとおり、-r で続ける (-e・-w・-C は付け直す)
 ${CLAUDE_SKILL_DIR}/scripts/ask.sh -k -C <repo> "<プロンプト>"
-${CLAUDE_SKILL_DIR}/scripts/ask.sh -r <セッション> -C <repo> "<続きのプロンプト>"
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -r <続け方に出た UUID> -C <repo> "<続きのプロンプト>"
+# - で始まるプロンプトは、-- の後ろに書く
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> -- "- 境界値を見て"
 ```
 
 オプションはプロンプトの前に書く(後ろに書くと、効かないまま走らずに止まる)。回答が空なら、失敗として返る。
@@ -80,6 +82,7 @@ Claude が読む量の多い仕事を Codex に寄せるときは、先に `refe
       そのときは、本当のコメントに `sandbox_mode` などと書いてあっても止まる
     - リポジトリの設定がプラグインに触れている。または、リポジトリの設定の MCP が `codex -p claude mcp list` に出ない
     - `-C` が、場所で止めたディレクトリの中にある
+    - `CODEX_HOME` が `~/.codex` 以外を指していて、その下の Codex の認証と記録を、プロファイルが止めていない(足す行が出る。足すのは利用者)
     - `~/.codex/config.toml` で有効なプラグインを、プロファイルが切っていない(足す行が出る。足すのは利用者)
     - `~/.codex/config.toml` のプラグインの書き方を読み取れない。数えるのは `[plugins."名前"]` の表だけ。`plugins` を引用符で囲む、`plugins` の後ろの
       ドットの前後に空白を入れる、`[plugins]` の表の中に名前を鍵で書く、下の表(`[plugins."名前".何か]`)だけを書く、などは止まる

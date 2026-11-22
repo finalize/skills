@@ -21,13 +21,14 @@ git init -q "$fx/repo"
 mkdir -p "$fx/repo/a/b/c"
 
 # run <現在地> <ask.sh の引数...> : 結果は RC・OUT・ERR。
-#   FAKE_MODE・FAKE_MCP_JSON・FAKE_MCP_BASE_JSON・FAKE_MCP_RC は呼ぶ前に置く
+#   FAKE_MODE・FAKE_SESSIONS・FAKE_MCP_JSON・FAKE_MCP_BASE_JSON・FAKE_MCP_RC は呼ぶ前に置く。
+#   RUN_CODEX_HOME を置くと、CODEX_HOME をそこに向ける（既定は fixture の ~/.codex）
 run() {
   local cwd=$1
   shift
   : >"$fx/fake.log"
-  OUT=$(cd "$cwd" && env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" XDG_STATE_HOME="$fx/state" \
-    FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" FAKE_MODE="${FAKE_MODE:-ok}" \
+  OUT=$(cd "$cwd" && env -i PATH="$tools" HOME="$home" CODEX_HOME="${RUN_CODEX_HOME:-$ch}" XDG_STATE_HOME="$fx/state" \
+    FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" FAKE_MODE="${FAKE_MODE:-ok}" FAKE_SESSIONS="${FAKE_SESSIONS:-}" \
     FAKE_MCP_JSON="${FAKE_MCP_JSON:-[]}" FAKE_MCP_BASE_JSON="${FAKE_MCP_BASE_JSON:-}" FAKE_MCP_RC="${FAKE_MCP_RC:-0}" \
     /bin/sh "$ASK" "$@" 2>"$fx/err" </dev/null)
   RC=$?
@@ -77,14 +78,23 @@ lacks "-k なら残す" "--ephemeral" "$(argv)"
 # --- 続き（-k で残して、-r で続ける）
 # ここが設計の判断: 続け方は ask.sh の -r で案内する。codex exec resume を直接呼ぶ形で案内すると、
 # 続きの呼び出しには MCP を切る指定が付かず、止まる条件の検査も通らない（2026-11-22 まで、そう案内していた）
+sid=11111111-2222-7333-8444-555555555555 # 偽の codex が、新しいセッションに付ける名前
+sid2=aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee
+ask_real="$(cd "$(dirname "$ASK")" && pwd -P)/ask.sh"
 hint() { printf '%s\n' "$ERR" | grep '続けるとき'; }
 run "$fx/plain" -k -C "$fx/plain" "x"
-has "続け方: ask.sh の -r と、同じ作業ディレクトリ" "/scripts/ask.sh -r th_fake_123 -C \"$fx/plain\"" "$(hint)"
-lacks "続け方: codex を直接呼ぶ形にしない" "codex exec" "$(hint)"
+check "続け方: ask.sh の -r と、同じ作業ディレクトリ。場所は引用符で囲む" \
+  "[ask-codex] 続けるとき: \"$ask_real\" -r $sid -C \"$fx/plain\" \"<プロンプト>\"" "$(hint)"
 run "$fx/repo" -k -w -C "$fx/repo" "x"
-has "続け方: 書く権限で残したら、-w も付ける" "/scripts/ask.sh -r th_fake_123 -w -C \"$fx/repo\"" "$(hint)"
+check "続け方: 書く権限で残したら、-w も付ける" \
+  "[ask-codex] 続けるとき: \"$ask_real\" -r $sid -w -C \"$fx/repo\" \"<プロンプト>\"" "$(hint)"
+# セッションが始まった後で落ちたとき（ここでは、回答が空）は、そのセッションは残っているので、続け方を出す
+FAKE_MODE=empty run "$fx/plain" -k "x"
+check "続け方: 始まった後で落ちたとき: 終了コード" 1 "$RC"
+has "続け方: 始まった後で落ちたときも出す" "-r $sid " "$(hint)"
+rm -f "$fx/tmp"/* # 失敗のログとイベントは残る。下の「一時ファイルを数える」検査に混ぜない
 
-FAKE_MCP_JSON='[{"name":"notes","enabled":true}]' run "$fx/plain" -r th_fake_123 -C "$fx/plain" "続きを聞く"
+FAKE_MCP_JSON='[{"name":"notes","enabled":true}]' run "$fx/plain" -r "$sid" -C "$fx/plain" "続きを聞く"
 passed "-r で続ける"
 check "-r: 回答を返す" "FAKE ANSWER" "$OUT"
 has "-r: 同じプロファイルで呼ぶ" "exec -p claude -C $fx/plain" "$(argv)"
@@ -92,36 +102,93 @@ has "-r: 権限を付け直す" 'default_permissions="claude-read"' "$(argv)"
 has "-r: MCP を切る指定を付ける" "-c mcp_servers.notes.enabled=false" "$(argv)"
 lacks "-r: セッションを残す" "--ephemeral" "$(argv)"
 a=$(argv)
-check "-r: resume の後ろは、セッションとプロンプトだけ" "th_fake_123 続きを聞く " "${a#* resume }"
-has "-r: 続け方をまた出す" "/scripts/ask.sh -r th_fake_123 -C \"$fx/plain\"" "$(hint)"
+check "-r: resume の後ろは、セッションと、-- で区切ったプロンプトだけ" "$sid -- 続きを聞く " "${a#* resume }"
+has "-r: 続け方をまた出す" "-r $sid -C \"$fx/plain\"" "$(hint)"
 has "-r: 標準入力を閉じる" "stdin_bytes=0" "$(cat "$fx/fake.log")"
+
+# 続け方に出す名前は、codex が返したもの（続けたセッション）
+FAKE_SESSIONS="$sid $sid2" run "$fx/plain" -r "$sid2" "x"
+has "-r: 続け方は、続けたセッションの名前" "-r $sid2 " "$(hint)"
 
 : >"$fx/fake.log"
 OUT=$(cd "$fx/plain" && printf '続き\n' | env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" \
-  XDG_STATE_HOME="$fx/state" FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" /bin/sh "$ASK" -r th_fake_123 - 2>/dev/null)
+  XDG_STATE_HOME="$fx/state" FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" /bin/sh "$ASK" -r "$sid" - 2>/dev/null)
 a=$(argv)
-check "-r: 標準入力のプロンプトは、セッションの後ろに - で渡す" "th_fake_123 - " "${a#* resume }"
+check "-r: 標準入力のプロンプトは、セッションの後ろに -- - で渡す" "$sid -- - " "${a#* resume }"
+
+# ここが設計の判断: プロンプトは、必ず -- の後ろで codex に渡す。- で始まるプロンプトを、codex がオプションとして読まないようにする。
+# 本物の codex は、resume <セッション> --last を「直前のセッションを続け、<セッション> をプロンプトにする」と読んだ
+# （2026-11-22、codex-cli 0.164.0。ask.sh -r <セッション> -- --last で、そう渡っていた）
+run "$fx/plain" -r "$sid" -- "--last"
+check "-r: プロンプトが --last でも、渡したセッションで答える" "FAKE ANSWER" "$OUT"
+a=$(argv)
+check "-r: プロンプトの --last は、-- の後ろ" "$sid -- --last " "${a#* resume }"
+run "$fx/plain" -- "--ephemeral ではなくて"
+passed "- で始まるプロンプト"
+a=$(argv)
+check "- で始まるプロンプトは、-- の後ろ" "--ephemeral ではなくて " "${a##* -- }"
 
 # 無いセッションを続けようとすると、本物の codex は落ちる。そのセッションの続け方を案内しない
-run "$fx/plain" -r no-such-session -C "$fx/plain" "x"
+run "$fx/plain" -r 00000000-0000-7000-8000-000000000000 -C "$fx/plain" "x"
 check "-r に無いセッション: 終了コード" 1 "$RC"
 has "-r に無いセッション: codex の理由を出す" "no rollout found" "$ERR"
 check "-r に無いセッション: 続け方を出さない" "" "$(hint)"
-rm -f "$fx/tmp"/* # 失敗のログとイベントは残る。下の「一時ファイルを数える」検査に混ぜない
+rm -f "$fx/tmp"/*
 
 put "$fx/plain" 'sandbox_mode = "danger-full-access"'
-run "$fx/plain" -r th_fake_123 -C "$fx/plain" "x"
+run "$fx/plain" -r "$sid" -C "$fx/plain" "x"
 stopped "-r でも、止まる条件の検査を通る（sandbox_mode）"
 clear_cfg
 
-# セッションの名前は、英数字と _ - だけ。- で始まるものは codex のオプションとして読まれる
-# （--last は、直前のどのセッションでも続けてしまう）
-for bad in "--last" "-x" "a b" "x;y" "../x" ""; do
+# セッションの名前は、UUID だけを受ける。続け方に出すのも UUID。
+# 本物の codex は、UUID でない名前が見つからないと、黙って新しいセッションを始めた（前の続きのつもりで、
+# 何も知らない相手の回答を受け取る。2026-11-22、codex-cli 0.164.0）。
+# - で始まる名前は codex のオプションとして読まれる（--last は、直前のどのセッションでも続ける）
+for bad in "--last" "-x" "a b" "x;y" "../x" "" "my-session" "th_fake_123" "11111111222273338444555555555555" \
+  "-1111111-2222-7333-8444-555555555555" "11111111-2222-7333-8444-55555555555" "g1111111-2222-7333-8444-555555555555" \
+  "$(printf '%s\nx' "$sid")"; do
   run "$fx/plain" -r "$bad" "x"
   check "-r に使えない名前 [${bad}]: 終了コード" 2 "$RC"
   check "-r に使えない名前 [${bad}]: codex を呼ばない" 0 "$(called)"
-  has "-r に使えない名前 [${bad}]: 理由を言う" "セッションの名前に使えない" "$ERR"
+  has "-r に使えない名前 [${bad}]: 理由を言う" "セッションの名前" "$ERR"
 done
+
+# --- 守り: CODEX_HOME が ~/.codex でないとき
+# プロファイルは、Codex の認証と記録を ~/.codex の下の場所で止めている。CODEX_HOME が別の場所だと、その下は止まらない。
+# 止めていなければ、足す行を出して止まる
+alt="$fx/altcodex"
+mkdir -p "$alt"
+cp "$PROFILE_SRC" "$alt/claude.config.toml"
+RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
+stopped "CODEX_HOME が別の場所で、その下を止めていない"
+for f in auth.json history.jsonl sessions archived_sessions; do
+  has "CODEX_HOME が別の場所: 足す行を出す（${f}）" "\"$alt/$f\" = \"deny\"" "$ERR"
+done
+alt_profile() { # alt_profile <足す名前...> : ~/.codex 用の決まりに、$alt の下の場所を足したプロファイルを置く
+  local f
+  : >"$fx/alt-lines"
+  for f in "$@"; do printf '"%s" = "deny"\n' "$alt/$f" >>"$fx/alt-lines"; done
+  sed "/^\[permissions\.claude-read\.filesystem\]\$/r $fx/alt-lines" "$PROFILE_SRC" >"$alt/claude.config.toml"
+  # fixture の確認: 足した行が、場所の表の中に入ったこと
+  check "fixture: 足した ${#} 行がプロファイルに入った" "$#" "$(grep -c "^\"$alt/" "$alt/claude.config.toml")"
+}
+alt_profile auth.json history.jsonl sessions archived_sessions
+RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
+passed "CODEX_HOME が別の場所でも、その下を止めていれば通る"
+alt_profile auth.json history.jsonl archived_sessions
+RUN_CODEX_HOME="$alt" run "$fx/plain" "x"
+stopped "CODEX_HOME が別の場所で、1つ（会話の記録）だけ止めていない"
+has "CODEX_HOME が別の場所: 欠けた1つだけを出す" "\"$alt/sessions\" = \"deny\"" "$ERR"
+lacks "CODEX_HOME が別の場所: 止めてあるものは出さない" "\"$alt/auth.json\"" "$ERR"
+# HOME の下なら、足す行は ~/ で出す（プロファイルのほかの行と同じ書き方。利用者の名前が入った場所を書かせない）
+mkdir -p "$home/.codex-alt"
+cp "$PROFILE_SRC" "$home/.codex-alt/claude.config.toml"
+RUN_CODEX_HOME="$home/.codex-alt" run "$fx/plain" "x"
+stopped "CODEX_HOME が HOME の下の別の場所"
+has "CODEX_HOME が HOME の下: 足す行は ~/ で出す" '"~/.codex-alt/auth.json" = "deny"' "$ERR"
+ln -s "$ch" "$fx/linkcodex"
+RUN_CODEX_HOME="$fx/linkcodex" run "$fx/plain" "x"
+passed "CODEX_HOME が ~/.codex への symlink なら、同じ場所なので通る"
 
 : >"$fx/fake.log"
 OUT=$(cd "$fx/plain" && printf '長いプロンプト\n2行目\n' | env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" \

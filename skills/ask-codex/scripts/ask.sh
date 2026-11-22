@@ -5,7 +5,7 @@
 #   -w  作業ディレクトリに書ける権限 (プロファイルの claude-write) で実行する。省略時は読むだけ (claude-read)
 #   -C  作業ディレクトリ。既定は現在地
 #   -k  セッションを残す (あとで続けるとき)。続け方を標準エラーに出す
-#   -r  -k で残したセッションを続ける。渡すのは、続け方に出た名前。-e・-w・-C は引き継がないので、付け直す
+#   -r  -k で残したセッションを続ける。渡すのは、続け方に出た名前 (UUID)。-e・-w・-C は引き継がないので、付け直す
 #   -S  最終回答の形を JSON Schema で縛る。名前 (objections・report) か、ファイルの場所
 #   プロンプトを省略するか - を渡すと、標準入力から読む。オプションはプロンプトの前に書く (後ろの引数は受け付けない)
 # 終わると、Codex が使ったトークンを標準エラーに1行出し、
@@ -32,15 +32,18 @@ while getopts "e:wC:kr:S:" opt; do
     C) dir=$OPTARG ;;
     k) keep=1 ;;
     r)
-      # codex exec resume にそのまま渡す。- で始まる名前は codex のオプションとして読まれる
-      # (--last は、直前のどのセッションでも続けてしまう) ので、英数字と _ - だけを受ける
+      # 受けるのは UUID だけ (続け方に出すのも UUID)。codex exec resume にそのまま渡すので、ほかの形は通さない
+      #   - で始まる名前は、codex のオプションとして読まれる (--last は、直前のどのセッションでも続ける)
+      #   UUID でない名前が見つからないと、codex は黙って新しいセッションを始めた (2026-11-22、codex-cli 0.164.0)。
+      #   前の続きのつもりで、何も知らない相手の回答を受け取る
       case $OPTARG in
-        "" | -* | *[!A-Za-z0-9_-]*)
-          echo "-r のセッションの名前に使えない文字がある: [$OPTARG] (英数字と _ - だけ。-k のときに出た続け方の名前を渡す)" >&2
-          exit 2
-          ;;
+        "" | *[!0-9A-Fa-f-]*) resume="" ;;
+        *) resume=$(printf '%s\n' "$OPTARG" | LC_ALL=C grep -E '^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$' || true) ;;
       esac
-      resume=$OPTARG
+      if [ -z "$resume" ]; then
+        printf '%s\n' "-r のセッションの名前を受け付けない: [$OPTARG] (-k のときに出た続け方の名前を、そのまま渡す。UUID の形)" >&2
+        exit 2
+      fi
       keep=1
       ;;
     *)
@@ -107,24 +110,66 @@ stop() { # 理由には設定の行を入れることがある。macOS の sh �
 }
 lower() { printf '%s/' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'; }
 
+# パス $1 を、実体のパスにして出す。ディレクトリなら、そのまま辿る。ファイルなら、親のディレクトリを辿って名前を付け直す。
+# どちらも辿れなければ (まだ無い場所)、書かれたまま出す
+real_of() {
+  if r=$(CDPATH='' cd -- "$1" 2>/dev/null && pwd -P); then
+    printf '%s\n' "$r"
+  elif r=$(CDPATH='' cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P); then
+    printf '%s\n' "${r%/}/$(basename -- "$1")"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 # 1) プロファイルの、場所 (~/ か / で始まり、* を含まない) の deny。場所を書くのはプロファイルだけ (ほかの設定が足していたら、下で止まる)
 deny_re="s/^[[:space:]]*[\"']((~\\/|\\/)[^\"'*]*)[\"'][[:space:]]*=[[:space:]]*[\"']deny[\"'].*/\\1/p"
 denied_dirs=$(sed -nE "$deny_re" "$profile") || stop "$profile を読めない"
 [ -n "$denied_dirs" ] || stop "$profile から、場所で読めなくしたディレクトリを読み取れない"
 abs_lower=$(lower "$abs_dir")
+denied_real="" # 読めなくした場所を、実体のパスにして小文字にしたもの (1行に1つ、末尾は /)
 while IFS= read -r d; do
   [ -n "$d" ] || continue
   # shellcheck disable=SC2088 # 設定に書かれた文字どおりの ~/ と比べている (シェルに展開させたいのではない)
   case $d in "~/"*) d="${HOME:-}/${d#\~/}" ;; esac
-  d=${d%/}
   # シンボリックリンクを含むなら、作業ディレクトリと同じく実体のパスで比べる
-  if p=$(CDPATH='' cd -- "$d" 2>/dev/null && pwd -P); then d=$p; fi
+  d=$(real_of "${d%/}")
+  dl=$(lower "$d")
+  denied_real="$denied_real
+$dl"
   case "$abs_lower" in
-    "$(lower "$d")"*) stop "作業ディレクトリ $abs_dir は、読めなくした $d の中にある" ;;
+    "$dl"*) stop "作業ディレクトリ $abs_dir は、読めなくした $d の中にある" ;;
   esac
 done <<LIST
 $denied_dirs
 LIST
+
+# Codex 自身の認証と記録は、CODEX_HOME の下にある。プロファイルは ~/.codex の下を場所で止めているので、
+# CODEX_HOME が別の場所を指していると、その下は止まらない。止めていなければ、足す行を出して止まる
+codex_real=$(real_of "$codex_home")
+missing=""
+for f in auth.json history.jsonl sessions archived_sessions; do
+  want=$(lower "$codex_real/$f")
+  hit=""
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case $want in "$d"*) hit=1 ;; esac
+  done <<LIST
+$denied_real
+LIST
+  [ -n "$hit" ] || missing="$missing $f"
+done
+if [ -n "$missing" ]; then
+  printf '%s\n' "止めた: CODEX_HOME ($codex_home) の下にある Codex の認証と記録を、プロファイルが読めなくしていない。$profile に次を足す:" >&2
+  # HOME の下なら、プロファイルのほかの行と同じく ~/ で出す
+  shown=$codex_real
+  home_real=$(real_of "${HOME:-/}")
+  # shellcheck disable=SC2088 # 設定に書く文字どおりの ~/ を出している (シェルに展開させたいのではない)
+  case $codex_real in "${home_real%/}"/*) shown="~/${codex_real#"${home_real%/}"/}" ;; esac
+  for f in $missing; do printf '  "%s" = "deny"\n' "$shown/$f" >&2; done
+  printf '%s\n' "$handoff" >&2
+  exit 1
+fi
 
 # 2)〜4)。検査する行 (下の body_of が出す行) を、文字で探す
 # 設定 $1 の、検査する行を出す。# で始まる行は、コメントとして落とす。ただし、複数行の文字列の区切り (""" か ''') が
@@ -356,10 +401,13 @@ if [ -n "$resume" ]; then set -- "$@" resume "$resume"; fi
 start=$(date +%s)
 status=0
 # プロンプトを引数で渡すとき、標準入力が開いたままだと codex は EOF を待って止まる。
+# プロンプトは、必ず -- の後ろで渡す。- で始まるプロンプトを、codex がオプションとして読まないようにする。
+# -- が無いと、resume <セッション> --last は「直前のセッションを続け、<セッション> をプロンプトにする」と読まれた
+# (2026-11-22、codex-cli 0.164.0)
 if [ "$prompt" = "-" ]; then
-  codex "$@" - >"$events" 2>"$log" || status=$?
+  codex "$@" -- - >"$events" 2>"$log" || status=$?
 else
-  codex "$@" "$prompt" >"$events" 2>"$log" </dev/null || status=$?
+  codex "$@" -- "$prompt" >"$events" 2>"$log" </dev/null || status=$?
 fi
 seconds=$(($(date +%s) - start))
 
@@ -400,14 +448,14 @@ EOF
   fi
   if [ -n "$keep" ]; then
     thread=$(jq -Rrn '[inputs | fromjson? | select(type == "object" and .type == "thread.started") | .thread_id] | first // empty' "$events" 2>/dev/null) || thread=""
-    # 続きの呼び出しが thread.started を出さなくても、通ったのなら同じ名前で続けられる。
-    # 落ちたとき (その名前のセッションが無い、など) は、渡された名前で案内しない
-    if [ -z "$thread" ] && [ "$status" -eq 0 ]; then thread=$resume; fi
+    # 名前は、codex が返したものを出す (続きの呼び出しも、thread.started に同じ名前を出す)。
+    # セッションが始まらずに落ちたとき (渡したセッションが無い、など) は、名前が無いので案内しない。
+    # 始まった後で落ちたときは、そのセッションは残っているので案内する
     if [ -n "$thread" ]; then
       # 続け方は、この ask.sh の -r で案内する。codex exec resume を直接呼ぶと、MCP を切る指定が付かず、上の検査も通らない
       w=""
       if [ "$perm" = "claude-write" ]; then w=" -w"; fi
-      printf '%s\n' "[ask-codex] 続けるとき: $skill_dir/scripts/ask.sh -r $thread$w -C \"$abs_dir\" \"<プロンプト>\"" >&2
+      printf '%s\n' "[ask-codex] 続けるとき: \"$skill_dir/scripts/ask.sh\" -r $thread$w -C \"$abs_dir\" \"<プロンプト>\"" >&2
     fi
   fi
   return 0
