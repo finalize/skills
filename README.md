@@ -14,7 +14,7 @@ Claude Code に覚えさせておきたい、**自分で書いたスキル**を�
 ~/.claude/skills/<名前>/                     ← Claude Code
 ~/.agents/skills/<名前>/                     ← Codex・Cursor・Gemini CLI（Claude Code 専用のスキルは張らない）
 ~/.codex/claude.config.toml                  ← ask-codex のプロファイル（Codex が入っているとき）
-~/.claude/skills/wrangler/ など              ← 入れただけのスキル。実ディレクトリのまま、git で追わない
+~/.claude/skills/cloudflare/ など            ← 入れただけのスキル。実ディレクトリのまま、git で追わない
 ```
 
 **クローンは1つにして、そこから張る。** 置き場所はどこでもよい（`install.sh` は、自分のある場所から張る）。
@@ -65,6 +65,7 @@ Claude Code はセッション開始時にスキル一覧を読む。反映さ�
   `skills/ask-codex/claude.config.toml` に足す（Codex で有効にしているプラグインは、環境ごとに違う）。
 - 読めなくする名前や場所を足すときも、同じプロファイルに書く（公開されるので、案件の名前や受け取ったデータの場所は書かない）。
   `~/.codex/config.toml` には書かない（そこが `claude-read` / `claude-write` に触れていると、`ask.sh` は止まる）。
+- `CODEX_HOME` を `~/.codex` 以外にしているなら、`ask.sh` は、その下の認証と記録を止める行を出して止まる。出てきた行をプロファイルに足す。
 - プロファイルに足したら `tests/sandbox.sh` を流して、読めなくする決まりが効いたままなのを見る。
 
 ### 更新するとき
@@ -114,7 +115,7 @@ git pull --ff-only                               # main の作業ツリーで。
 | `make-verify-skill` | 画面や CLI の変更を「動いた」と言う前に、確かめる手段が無いとき。起動・診断・操作・証拠・後片付けの手順と機能の地図を、リポジトリごとのスキルとして作り、一度通してから渡す |
 | `fix-with-evidence` | 不具合や遅さを直すとき。利用者と同じ面で自分で再現し、動かして得た証拠で原因を絞り、同じ面で直ったのを見てから終える |
 | `prevent-repeated-mistakes` | 同じ指摘を二度したとき。メモや CLAUDE.md に足す前に、構造・型・lint やフック・テストの順で起きなくし、過去の実際の誤りで止まるのを確かめる |
-| `ask-codex` | Codex に別視点を頼むとき（差分レビュー、2回外したバグ、計画の穴探し、読む量の多い調査）。呼び出し用の `ask.sh` と、秘密と実データを読ませないプロファイルつき。Claude Code が前提 |
+| `ask-codex` | Codex に別視点を頼むとき（差分レビュー、2回外したバグ、計画の穴探し、読む量の多い調査）。呼び出し用の `ask.sh` と、秘密の置き場と `docs/` の下の資料を読ませないプロファイルつき。Claude Code が前提 |
 | `dispatch-tasks` | 複数のチケットを、司令塔のセッションから Rex の別々のセッションに割り振るとき。worktree・番号・起動・見張り・鍵のスクリプトと、指示文の雛形つき。Claude Code と Rex が前提 |
 
 出どころと、それぞれを測った記録（何が変わり、何が変わらなかったか。まだ確かめていないこと）は、
@@ -162,7 +163,10 @@ tests/sandbox.sh   # 本物の codex sandbox で、ask-codex の読ませない�
 ```
 
 スクリプトかプロファイルを直したら流す。どちらも、本物の `~/.claude`・`~/.agents`・`~/.codex` には触らない。
-GitHub Actions でも `tests/run.sh` を流す。
+GitHub Actions でも `tests/run.sh` を流す（main への push と、PR）。
+
+`tests/run.sh` の lint は、`shellcheck` が無いとその検査だけ飛ばす（「飛ばす: shellcheck が無い」と出る）。
+手元にも入れておく（`brew install shellcheck`）。入れていないと、警告が CI で初めて分かる。
 
 ## そのうち
 

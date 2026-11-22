@@ -5,6 +5,8 @@
 #       -p が無いとき     FAKE_MCP_BASE_JSON（土台の設定だけの見え方。無ければ FAKE_MCP_JSON と同じ）
 #   exec ...        : FAKE_MODE = ok（回答を書く）| empty（終了コード 0 で回答を書かない）| fail（終了コード 3）
 #       FAKE_MCP_JSON に無い MCP を -c mcp_servers.<名前>.enabled=false で切ろうとすると、設定を読めずに終了コード 1
+#   exec ... resume <セッション> -- <プロンプト> : FAKE_SESSIONS（空白区切り。既定は、新しいセッションに付ける名前1つ）に
+#       あるセッションを続ける。無いときと、-- の前に --last があるときの振る舞いは、下の「どのセッションで答えるか」
 # 一覧の見え方が2つあるのと、無い MCP を切ると落ちるのは、本物で見た振る舞い（2026-11-21、codex-cli 0.164.0）:
 #   codex mcp list --json は、プロファイルが切ったプラグインの MCP（cua_repl）も返す。codex -p claude mcp list --json は返さない。
 #   codex exec -p claude -c mcp_servers.cua_repl.enabled=false は「invalid transport in `mcp_servers.cua_repl`」で落ちる。
@@ -45,9 +47,11 @@ fi
   if [ -t 0 ]; then echo "stdin=tty"; else printf 'stdin_bytes=%s\n' "$(cat | wc -c | tr -d ' ')"; fi
 } >>"$log"
 
-# 見るのは -c の値だけ（プロンプトに同じ形の文字列があっても、設定の上書きではない）
-prev=""
+# オプションとして読むのは、-- の前まで。-- の後ろはプロンプト（同じ形の文字列があっても、設定の上書きやオプションではない）
+new_id=11111111-2222-7333-8444-555555555555
+out="" prev="" session="" last=""
 for a in "$@"; do
+  [ "$a" = "--" ] && break
   if [ "$prev" = "-c" ]; then
     case $a in
       mcp_servers.*.enabled=false)
@@ -60,22 +64,44 @@ for a in "$@"; do
         ;;
     esac
   fi
+  [ "$prev" = "-o" ] && out=$a
+  if [ "$prev" = "resume" ]; then
+    case $a in -*) ;; *) session=$a ;; esac
+  fi
+  [ "$a" = "--last" ] && last=1
   prev=$a
 done
 
-out="" prev=""
-for a in "$@"; do
-  [ "$prev" = "-o" ] && out=$a
-  prev=$a
-done
+# どのセッションで答えるか。本物で見た振る舞い（2026-11-22、codex-cli 0.164.0）:
+#   resume <セッション> --last   直前のセッションを続け、<セッション> はプロンプトとして読む
+#   resume <無い UUID>           「no rollout found for thread id」で落ちる（イベントは出ない）
+#   resume <UUID でない無い名前>  黙って新しいセッションを始める
+#   resume <あるセッション>       thread.started に、同じ名前を出す
+thread=$new_id
+answer="FAKE ANSWER"
+if [ -n "$last" ]; then
+  thread=99999999-9999-7999-8999-999999999999
+  answer="ANSWER FROM THE LAST SESSION"
+elif [ -n "$session" ]; then
+  case " ${FAKE_SESSIONS:-$new_id} " in
+    *" $session "*) thread=$session ;;
+    *)
+      if printf '%s\n' "$session" | grep -Eq '^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$'; then
+        echo "Error: thread/resume: thread/resume failed: no rollout found for thread id $session (code -32600)" >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
+
 case ${FAKE_MODE:-ok} in
   ok)
-    printf '{"type":"thread.started","thread_id":"th_fake_123"}\n'
+    printf '{"type":"thread.started","thread_id":"%s"}\n' "$thread"
     printf '{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":800,"output_tokens":90,"reasoning_output_tokens":40}}\n'
-    printf 'FAKE ANSWER' >"$out"
+    printf '%s' "$answer" >"$out"
     ;;
   empty)
-    printf '{"type":"thread.started","thread_id":"th_fake_123"}\n'
+    printf '{"type":"thread.started","thread_id":"%s"}\n' "$thread"
     printf '{"type":"turn.failed","error":{"message":"stream disconnected"}}\n'
     ;;
   fail)

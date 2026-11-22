@@ -15,8 +15,8 @@ description: Claude Code が Codex に別視点を頼むとき。実装後の差
 - かかるもの: 既定の推論(max)は重い。差分レビュー1回で9分半・入力170万トークンの例がある(`references/delegate.md`)。
 
 ## 呼び方
-`${CLAUDE_SKILL_DIR}/scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は max、読むだけで秘密と実データの
-置き場は読めない、Codex が動かすコマンドはネットワークにつながらない、プラグインを切る)を重ね、Codex から見える MCP を全部切って、
+`${CLAUDE_SKILL_DIR}/scripts/ask.sh` を使う。Codex 用のプロファイル(`claude.config.toml`: 推論は max、読むだけで、秘密の置き場と
+`docs/` の下の資料は読めない、Codex が動かすコマンドはネットワークにつながらない、プラグインを切る)を重ね、Codex から見える MCP を全部切って、
 最終回答だけを返す。終わると、Codex が使ったトークンを標準エラーに1行出す。プロファイルは、リポジトリの `install.sh` が
 `~/.codex/claude.config.toml` からこのディレクトリのファイルへ symlink する。無ければ `ask.sh` が張り方を出して止まる。
 
@@ -28,11 +28,17 @@ ${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> "<プロンプト>"
 ${CLAUDE_SKILL_DIR}/scripts/ask.sh -e low -C <repo> "<プロンプト>"
 # 長いプロンプトは標準入力から
 ${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> - < prompt.md
+# 返事を踏まえて続きを聞くなら、-k で残す。標準エラーに出る続け方のとおり、-r で続ける (-e・-w・-C は付け直す)
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -k -C <repo> "<プロンプト>"
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -r <続け方に出た UUID> -C <repo> "<続きのプロンプト>"
+# - で始まるプロンプトは、-- の後ろに書く
+${CLAUDE_SKILL_DIR}/scripts/ask.sh -C <repo> -- "- 境界値を見て"
 ```
 
 オプションはプロンプトの前に書く(後ろに書くと、効かないまま走らずに止まる)。回答が空なら、失敗として返る。
 
 `codex exec` を直接呼ぶなら、`-p claude` を付け、`-s`(`--sandbox`)は付けない(下の「守ること」)。
+続きを `codex exec resume` で直接呼ばない。MCP を切る指定が付かず、下の止まる条件の検査も通らない。
 プロンプトを引数で渡すとき必ず `< /dev/null` を付ける。付けないと、標準入力の EOF を待って止まる(実際に200秒止まった)。
 
 ## プロンプトの書き方
@@ -63,8 +69,8 @@ Claude が読む量の多い仕事を Codex に寄せるときは、先に `refe
 ## 守ること
 - 秘密(認証情報、`.env` の中身)をプロンプトに入れない。
 - Claude Code の除外設定(`.claude/settings.json`)は Codex に効かない。代わりに、プロファイルの permissions で
-  秘密と実データの置き場を読めなくしてある(`claude-read`、`-w` のときは `claude-write`)。名前(`.env`、鍵など)は
-  ディスクのどこでも、場所(`~/.ssh`、会話の記録など)はその下を止める。
+  秘密の置き場と、`docs/` の下の資料を読めなくしてある(`claude-read`、`-w` のときは `claude-write`)。名前(`.env`、鍵など)は
+  ディスクのどこでも、場所(`~/.ssh`、会話の記録、シェルの履歴など)はその下を止める。
   - 次のときは決まりが効かなくなるか、効いているかを確かめられないので、`ask.sh` は呼ばずに止まる。
     止まったら、理由を利用者に伝えて判断を待つ。守りを通すために、プロファイルや Codex の設定を自分で書き換えない
     - どこかの設定に `sandbox_mode` がある。見るのは `~/.codex/config.toml`、`/etc/codex`、`-C` からリポジトリの根までの全部の `.codex/config.toml`
@@ -76,6 +82,8 @@ Claude が読む量の多い仕事を Codex に寄せるときは、先に `refe
       そのときは、本当のコメントに `sandbox_mode` などと書いてあっても止まる
     - リポジトリの設定がプラグインに触れている。または、リポジトリの設定の MCP が `codex -p claude mcp list` に出ない
     - `-C` が、場所で止めたディレクトリの中にある
+    - `CODEX_HOME` が `~/.codex` 以外を指していて、その下の Codex の認証と記録を、プロファイルの `claude-read` の場所の表が
+      止めていない(足す行が出る。足すのは利用者)。`CODEX_HOME` の場所に `*`・引用符・バックスラッシュ・改行があるときも止まる
     - `~/.codex/config.toml` で有効なプラグインを、プロファイルが切っていない(足す行が出る。足すのは利用者)
     - `~/.codex/config.toml` のプラグインの書き方を読み取れない。数えるのは `[plugins."名前"]` の表だけ。`plugins` を引用符で囲む、`plugins` の後ろの
       ドットの前後に空白を入れる、`[plugins]` の表の中に名前を鍵で書く、下の表(`[plugins."名前".何か]`)だけを書く、などは止まる
