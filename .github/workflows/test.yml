@@ -1,7 +1,9 @@
 name: test
 
+# push は main だけ。ブランチの push でも走らせると、PR を開いている間、同じテストが2本ずつ走る
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
