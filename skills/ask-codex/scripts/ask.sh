@@ -1,10 +1,11 @@
 #!/bin/sh
 # Claude Code から Codex に1回聞いて、最終回答だけを標準出力に返す。
-# 使い方: ask.sh [-e 努力度] [-w] [-C ディレクトリ] [-k] [-S スキーマ] [プロンプト]
+# 使い方: ask.sh [-e 努力度] [-w] [-C ディレクトリ] [-k] [-r セッション] [-S スキーマ] [プロンプト]
 #   -e  model_reasoning_effort を上書き (low|medium|high|xhigh|max)。既定はプロファイルの max
 #   -w  作業ディレクトリに書ける権限 (プロファイルの claude-write) で実行する。省略時は読むだけ (claude-read)
 #   -C  作業ディレクトリ。既定は現在地
 #   -k  セッションを残す (あとで続けるとき)。続け方を標準エラーに出す
+#   -r  -k で残したセッションを続ける。渡すのは、続け方に出た名前。-e・-w・-C は引き継がないので、付け直す
 #   -S  最終回答の形を JSON Schema で縛る。名前 (objections・report) か、ファイルの場所
 #   プロンプトを省略するか - を渡すと、標準入力から読む。オプションはプロンプトの前に書く (後ろの引数は受け付けない)
 # 終わると、Codex が使ったトークンを標準エラーに1行出し、
@@ -15,20 +16,33 @@ set -eu
 set -f
 umask 077
 
-usage() { sed -n '3,9p' "$0" >&2; }
+usage() { sed -n '3,10p' "$0" >&2; }
 
 effort=""
 perm="claude-read"
 dir="."
 keep=""
+resume=""
 schema=""
-while getopts "e:wC:kS:" opt; do
+while getopts "e:wC:kr:S:" opt; do
   case $opt in
     S) schema=$OPTARG ;;
     e) effort=$OPTARG ;;
     w) perm="claude-write" ;;
     C) dir=$OPTARG ;;
     k) keep=1 ;;
+    r)
+      # codex exec resume にそのまま渡す。- で始まる名前は codex のオプションとして読まれる
+      # (--last は、直前のどのセッションでも続けてしまう) ので、英数字と _ - だけを受ける
+      case $OPTARG in
+        "" | -* | *[!A-Za-z0-9_-]*)
+          echo "-r のセッションの名前に使えない文字がある: [$OPTARG] (英数字と _ - だけ。-k のときに出た続け方の名前を渡す)" >&2
+          exit 2
+          ;;
+      esac
+      resume=$OPTARG
+      keep=1
+      ;;
     *)
       usage
       exit 2
@@ -336,6 +350,8 @@ if [ -n "$effort" ]; then set -- "$@" -c "model_reasoning_effort=\"$effort\""; f
 if [ "$perm" = "claude-read" ]; then set -- "$@" --skip-git-repo-check; fi
 if [ -z "$keep" ]; then set -- "$@" --ephemeral; fi
 if [ -n "$schema" ]; then set -- "$@" --output-schema "$schema"; fi
+# 続きも、ここまでと同じ検査と同じ指定 (プロファイル、権限、MCP を切る) で呼ぶ。resume の後ろは、セッションとプロンプトだけ
+if [ -n "$resume" ]; then set -- "$@" resume "$resume"; fi
 
 start=$(date +%s)
 status=0
@@ -384,8 +400,14 @@ EOF
   fi
   if [ -n "$keep" ]; then
     thread=$(jq -Rrn '[inputs | fromjson? | select(type == "object" and .type == "thread.started") | .thread_id] | first // empty' "$events" 2>/dev/null) || thread=""
+    # 続きの呼び出しが thread.started を出さなくても、通ったのなら同じ名前で続けられる。
+    # 落ちたとき (その名前のセッションが無い、など) は、渡された名前で案内しない
+    if [ -z "$thread" ] && [ "$status" -eq 0 ]; then thread=$resume; fi
     if [ -n "$thread" ]; then
-      echo "[ask-codex] 続けるとき: codex exec -p claude -C \"$abs_dir\" -c 'default_permissions=\"$perm\"' resume $thread \"<プロンプト>\" </dev/null" >&2
+      # 続け方は、この ask.sh の -r で案内する。codex exec resume を直接呼ぶと、MCP を切る指定が付かず、上の検査も通らない
+      w=""
+      if [ "$perm" = "claude-write" ]; then w=" -w"; fi
+      printf '%s\n' "[ask-codex] 続けるとき: $skill_dir/scripts/ask.sh -r $thread$w -C \"$abs_dir\" \"<プロンプト>\"" >&2
     fi
   fi
   return 0

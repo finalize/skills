@@ -73,7 +73,55 @@ lacks "書くときは git の外では走らせない" "--skip-git-repo-check" 
 run "$fx/plain" -e low -k "x"
 has "推論の強さ" 'model_reasoning_effort="low"' "$(argv)"
 lacks "-k なら残す" "--ephemeral" "$(argv)"
-has "続け方を出す" "resume th_fake_123" "$ERR"
+
+# --- 続き（-k で残して、-r で続ける）
+# ここが設計の判断: 続け方は ask.sh の -r で案内する。codex exec resume を直接呼ぶ形で案内すると、
+# 続きの呼び出しには MCP を切る指定が付かず、止まる条件の検査も通らない（2026-11-22 まで、そう案内していた）
+hint() { printf '%s\n' "$ERR" | grep '続けるとき'; }
+run "$fx/plain" -k -C "$fx/plain" "x"
+has "続け方: ask.sh の -r と、同じ作業ディレクトリ" "/scripts/ask.sh -r th_fake_123 -C \"$fx/plain\"" "$(hint)"
+lacks "続け方: codex を直接呼ぶ形にしない" "codex exec" "$(hint)"
+run "$fx/repo" -k -w -C "$fx/repo" "x"
+has "続け方: 書く権限で残したら、-w も付ける" "/scripts/ask.sh -r th_fake_123 -w -C \"$fx/repo\"" "$(hint)"
+
+FAKE_MCP_JSON='[{"name":"notes","enabled":true}]' run "$fx/plain" -r th_fake_123 -C "$fx/plain" "続きを聞く"
+passed "-r で続ける"
+check "-r: 回答を返す" "FAKE ANSWER" "$OUT"
+has "-r: 同じプロファイルで呼ぶ" "exec -p claude -C $fx/plain" "$(argv)"
+has "-r: 権限を付け直す" 'default_permissions="claude-read"' "$(argv)"
+has "-r: MCP を切る指定を付ける" "-c mcp_servers.notes.enabled=false" "$(argv)"
+lacks "-r: セッションを残す" "--ephemeral" "$(argv)"
+a=$(argv)
+check "-r: resume の後ろは、セッションとプロンプトだけ" "th_fake_123 続きを聞く " "${a#* resume }"
+has "-r: 続け方をまた出す" "/scripts/ask.sh -r th_fake_123 -C \"$fx/plain\"" "$(hint)"
+has "-r: 標準入力を閉じる" "stdin_bytes=0" "$(cat "$fx/fake.log")"
+
+: >"$fx/fake.log"
+OUT=$(cd "$fx/plain" && printf '続き\n' | env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" \
+  XDG_STATE_HOME="$fx/state" FAKE_TMP="$fx/tmp" FAKE_LOG="$fx/fake.log" /bin/sh "$ASK" -r th_fake_123 - 2>/dev/null)
+a=$(argv)
+check "-r: 標準入力のプロンプトは、セッションの後ろに - で渡す" "th_fake_123 - " "${a#* resume }"
+
+# 無いセッションを続けようとすると、本物の codex は落ちる。そのセッションの続け方を案内しない
+run "$fx/plain" -r no-such-session -C "$fx/plain" "x"
+check "-r に無いセッション: 終了コード" 1 "$RC"
+has "-r に無いセッション: codex の理由を出す" "no rollout found" "$ERR"
+check "-r に無いセッション: 続け方を出さない" "" "$(hint)"
+rm -f "$fx/tmp"/* # 失敗のログとイベントは残る。下の「一時ファイルを数える」検査に混ぜない
+
+put "$fx/plain" 'sandbox_mode = "danger-full-access"'
+run "$fx/plain" -r th_fake_123 -C "$fx/plain" "x"
+stopped "-r でも、止まる条件の検査を通る（sandbox_mode）"
+clear_cfg
+
+# セッションの名前は、英数字と _ - だけ。- で始まるものは codex のオプションとして読まれる
+# （--last は、直前のどのセッションでも続けてしまう）
+for bad in "--last" "-x" "a b" "x;y" "../x" ""; do
+  run "$fx/plain" -r "$bad" "x"
+  check "-r に使えない名前 [${bad}]: 終了コード" 2 "$RC"
+  check "-r に使えない名前 [${bad}]: codex を呼ばない" 0 "$(called)"
+  has "-r に使えない名前 [${bad}]: 理由を言う" "セッションの名前に使えない" "$ERR"
+done
 
 : >"$fx/fake.log"
 OUT=$(cd "$fx/plain" && printf '長いプロンプト\n2行目\n' | env -i PATH="$tools" HOME="$home" CODEX_HOME="$ch" \
